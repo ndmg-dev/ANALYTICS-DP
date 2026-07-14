@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-analytics_pass}
       POSTGRES_DB: ${POSTGRES_DB:-analytics_db}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,9 +25,6 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -53,8 +50,6 @@ services:
       context: .
       dockerfile: docker/backend.Dockerfile
     container_name: analytics-api
-    ports:
-      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-analytics_user}:${POSTGRES_PASSWORD:-analytics_pass}@db:5432/${POSTGRES_DB:-analytics_db}
       - MINIO_ENDPOINT=minio:9000
@@ -92,8 +87,6 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
     container_name: analytics-frontend
-    ports:
-      - "80:80"
     depends_on:
       - api
 
