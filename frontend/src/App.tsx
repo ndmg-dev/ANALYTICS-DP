@@ -20,7 +20,7 @@ function App() {
             <Route path="imports" element={<ImportsPage />} />
             <Route path="quality" element={<QualityPage />} />
             <Route path="employees" element={<EmployeesPage />} />
-            <Route path="settings" element={<div className="text-text-muted">Configurações (Em breve)</div>} />
+
           </Route>
         </Routes>
       </BrowserRouter>

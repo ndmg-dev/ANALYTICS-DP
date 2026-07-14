@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, UploadCloud, FileCheck, Users, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, FileCheck, Users } from 'lucide-react';
 
 export function MainLayout() {
   return (
@@ -32,16 +32,7 @@ export function MainLayout() {
           </NavLink>
         </nav>
         
-        <div className="p-4 border-t border-border">
-          <NavLink to="/settings" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Settings size={20} />
-            <span>Configurações</span>
-          </NavLink>
-          <button className="w-full mt-2 nav-item text-danger hover:text-danger hover:bg-danger/10">
-            <LogOut size={20} />
-            <span>Sair</span>
-          </button>
-        </div>
+
       </aside>
       
       {/* Main Content */}
