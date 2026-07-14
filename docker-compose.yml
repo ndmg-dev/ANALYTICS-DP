@@ -25,6 +25,10 @@ services:
     container_name: analytics-minio
     expose:
       - "9001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.rule=Host(`minio.72.60.14.4.sslip.io`)"
+      - "traefik.http.services.minio.loadbalancer.server.port=9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
