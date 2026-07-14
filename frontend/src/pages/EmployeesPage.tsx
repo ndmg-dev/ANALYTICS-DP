@@ -9,6 +9,9 @@ export function EmployeesPage() {
   const [selectedEmp, setSelectedEmp] = useState<any>(null);
   const [notes, setNotes] = useState('');
 
+  const [filterCompany, setFilterCompany] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+
   const { data: latestSnapshot, isLoading: isLoadingSnapshot } = useQuery({
     queryKey: ['latest-snapshot'],
     queryFn: () => api.get('/imports/latest-snapshot')
@@ -20,6 +23,18 @@ export function EmployeesPage() {
     queryKey: ['employees', snapshotId],
     queryFn: () => api.get(`/employees/snapshot/${snapshotId}`),
     enabled: !!snapshotId
+  });
+
+  const companies = Array.from(new Set(employees.map((e: any) => e.company || ''))).filter(Boolean) as string[];
+
+  const filteredEmployees = employees.filter((emp: any) => {
+    let match = true;
+    if (filterCompany && emp.company !== filterCompany) match = false;
+    if (filterDate) {
+      const empDate = emp.admission_date ? new Date(emp.admission_date).toISOString().split('T')[0] : '';
+      if (empDate !== filterDate) match = false;
+    }
+    return match;
   });
 
   const updateNote = useMutation({
@@ -45,9 +60,37 @@ export function EmployeesPage() {
 
   return (
     <div className="space-y-8 relative">
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Colaboradores</h1>
-        <p className="text-text-muted text-sm mt-1">Lista de colaboradores ativos do snapshot: {latestSnapshot?.reference_date ? new Date(latestSnapshot.reference_date).toLocaleDateString('pt-BR') : 'Atual'}</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-text-primary">Colaboradores</h1>
+          <p className="text-text-muted text-sm mt-1">Lista de colaboradores ativos do snapshot: {latestSnapshot?.reference_date ? new Date(latestSnapshot.reference_date).toLocaleDateString('pt-BR') : 'Atual'}</p>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-text-muted">Filtrar por Empresa</label>
+            <select
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+              className="bg-sidebar border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold"
+            >
+              <option value="">Todas as Empresas</option>
+              {companies.map((c, i) => (
+                <option key={i} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-text-muted">Filtrar por Admissão</label>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="bg-sidebar border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="glass-card overflow-hidden">
@@ -57,7 +100,7 @@ export function EmployeesPage() {
             Quadro de Funcionários
           </h3>
           <div className="px-3 py-1 bg-white/5 rounded-lg text-sm text-text-muted">
-            Total: {employees.length}
+            Total: {filteredEmployees.length}
           </div>
         </div>
         
@@ -66,7 +109,7 @@ export function EmployeesPage() {
             <div className="p-8 text-center text-text-muted">Carregando colaboradores...</div>
           ) : !snapshotId ? (
             <div className="p-8 text-center text-text-muted">Nenhum dado disponível. Realize uma importação.</div>
-          ) : employees.length === 0 ? (
+          ) : filteredEmployees.length === 0 ? (
             <div className="p-8 text-center text-text-muted">Nenhum colaborador encontrado neste snapshot.</div>
           ) : (
             <table className="w-full text-left text-sm">
@@ -82,7 +125,7 @@ export function EmployeesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {employees.map((emp: any) => (
+                {filteredEmployees.map((emp: any) => (
                   <tr key={emp.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-6 py-4 text-text-muted">#{emp.code}</td>
                     <td className="px-6 py-4 font-medium text-text-primary flex items-center gap-2">
