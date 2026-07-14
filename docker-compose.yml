@@ -48,6 +48,8 @@ services:
       context: .
       dockerfile: docker/backend.Dockerfile
     container_name: analytics-api
+    expose:
+      - "8000"
     environment:
       - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-analytics_user}:${POSTGRES_PASSWORD:-analytics_pass}@db:5432/${POSTGRES_DB:-analytics_db}
       - MINIO_ENDPOINT=minio:9000
@@ -85,6 +87,8 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
     container_name: analytics-frontend
+    expose:
+      - "80"
     depends_on:
       - api
 
