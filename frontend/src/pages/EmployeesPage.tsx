@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Users, FileUser, Edit2, X } from 'lucide-react';
+import { Users, FileUser, Edit2, X, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 export function EmployeesPage() {
   const queryClient = useQueryClient();
@@ -58,6 +60,59 @@ export function EmployeesPage() {
     });
   };
 
+  const handleExportExcel = async () => {
+    if (filteredEmployees.length === 0) {
+      toast.error('Nenhum dado para exportar.');
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Colaboradores');
+
+    worksheet.columns = [
+      { header: 'Código', key: 'code', width: 15 },
+      { header: 'Nome', key: 'name', width: 40 },
+      { header: 'Cargo', key: 'job_title', width: 30 },
+      { header: 'Categoria', key: 'category', width: 15 },
+      { header: 'Empresa', key: 'company', width: 45 },
+      { header: 'Admissão', key: 'admission_date', width: 15 },
+      { header: 'Observações', key: 'notes', width: 50 },
+    ];
+
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1a1a1a' }
+      };
+      cell.font = {
+        color: { argb: 'FFd4af37' },
+        bold: true
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    headerRow.height = 30;
+
+    filteredEmployees.forEach((emp: any) => {
+      worksheet.addRow({
+        code: `#${emp.code}`,
+        name: emp.name,
+        job_title: emp.job_title,
+        category: emp.category || '-',
+        company: emp.company || '-',
+        admission_date: emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-',
+        notes: emp.notes || '-'
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const today = new Date().toISOString().split('T')[0];
+    saveAs(blob, `Colaboradores_MG_${today}.xlsx`);
+    toast.success('Excel gerado com sucesso!');
+  };
+
   return (
     <div className="space-y-8 relative">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -89,6 +144,16 @@ export function EmployeesPage() {
               onChange={(e) => setFilterDate(e.target.value)}
               className="bg-sidebar border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold"
             />
+          </div>
+          
+          <div className="flex flex-col gap-1 justify-end">
+            <button
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-border hover:bg-white/10 rounded-lg text-text-primary text-sm font-medium transition-colors h-[38px]"
+            >
+              <Download size={16} className="text-gold" />
+              Exportar Excel
+            </button>
           </div>
         </div>
       </div>
