@@ -50,6 +50,7 @@ services:
     container_name: analytics-api
     expose:
       - "8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
       - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-analytics_user}:${POSTGRES_PASSWORD:-analytics_pass}@db:5432/${POSTGRES_DB:-analytics_db}
       - MINIO_ENDPOINT=minio:9000
