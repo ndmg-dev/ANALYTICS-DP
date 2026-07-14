@@ -119,3 +119,11 @@ class MetricResult(Base):
     calculated_at = Column(DateTime, default=datetime.utcnow)
 
     snapshot = relationship("Snapshot", back_populates="metrics")
+
+class EmployeeNote(Base):
+    __tablename__ = "employee_notes"
+    id = Column(Integer, primary_key=True, index=True)
+    company = Column(String, nullable=False, index=True)
+    code = Column(String, nullable=False, index=True)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

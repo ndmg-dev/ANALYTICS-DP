@@ -1,9 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.db.session import get_db
-from app.models import EmployeeRecord, Snapshot
+from app.models import EmployeeRecord, Snapshot, EmployeeNote
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
+
+class NoteUpdate(BaseModel):
+    company: str
+    code: str
+    notes: str
 
 @router.get("/snapshot/{snapshot_id}")
 async def list_employees(snapshot_id: int, db: Session = Depends(get_db)):
@@ -13,16 +19,42 @@ async def list_employees(snapshot_id: int, db: Session = Depends(get_db)):
         
     employees = db.query(EmployeeRecord).filter(EmployeeRecord.snapshot_id == snapshot_id).all()
     
-    return [
-        {
+    # Fetch all notes
+    notes_db = db.query(EmployeeNote).all()
+    notes_map = {(n.company, n.code): n.notes for n in notes_db}
+    
+    result = []
+    for emp in employees:
+        company = (emp.raw_data or {}).get("company", "Mendonça Galvão Contadores Associados")
+        result.append({
             "id": emp.id,
             "code": emp.code,
             "name": emp.name,
             "job_title": emp.job_title,
-            "company": (emp.raw_data or {}).get("company", "Mendonça Galvão Contadores Associados"),
+            "company": company,
             "category": emp.category,
             "admission_date": emp.admission_date,
+            "notes": notes_map.get((company, emp.code), ""),
             "status": "Ativo"
-        }
-        for emp in employees
-    ]
+        })
+    return result
+
+@router.put("/notes")
+async def update_note(payload: NoteUpdate, db: Session = Depends(get_db)):
+    note = db.query(EmployeeNote).filter(
+        EmployeeNote.company == payload.company,
+        EmployeeNote.code == payload.code
+    ).first()
+    
+    if note:
+        note.notes = payload.notes
+    else:
+        note = EmployeeNote(
+            company=payload.company,
+            code=payload.code,
+            notes=payload.notes
+        )
+        db.add(note)
+    
+    db.commit()
+    return {"status": "success"}
