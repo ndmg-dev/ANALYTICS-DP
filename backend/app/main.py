@@ -5,6 +5,9 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize connections here (db, minio)
+    from app.db.session import engine
+    from app.models import Base
+    Base.metadata.create_all(bind=engine)
     yield
     # Cleanup here
 

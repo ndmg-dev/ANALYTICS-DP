@@ -151,6 +151,9 @@ def process_job(db: Session, job: ImportJob):
         db.commit()
 
 def run_worker():
+    from app.models import Base
+    from app.db.session import engine
+    Base.metadata.create_all(bind=engine)
     print("Worker started. Waiting for jobs...")
     while True:
         db = SessionLocal()
