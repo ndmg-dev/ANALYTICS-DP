@@ -51,7 +51,7 @@ export function ImportsPage() {
   };
 
   const retryMutation = useMutation({
-    mutationFn: (importId: number) => api.post(`/imports/${importId}/retry`, {}),
+    mutationFn: (importId: number) => api.post(`/imports/${importId}/retry`),
     onSuccess: () => {
       toast.success('Reprocessamento iniciado.');
       queryClient.invalidateQueries({ queryKey: ['imports'] });

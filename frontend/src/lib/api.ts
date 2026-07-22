@@ -6,7 +6,7 @@ export const api = {
     if (!response.ok) throw new Error('API request failed');
     return response.json();
   },
-  post: async (endpoint: string, body: FormData) => {
+  post: async (endpoint: string, body?: FormData) => {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       body
