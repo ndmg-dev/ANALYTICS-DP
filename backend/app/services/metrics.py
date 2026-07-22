@@ -40,7 +40,10 @@ class MetricsEngine:
         metrics_to_save = []
 
         # 1. Active Headcount
-        active_headcount = df["code"].nunique()
+        # `code` is optional (some export templates don't have it, and every
+        # row falls back to "N/A"), so counting distinct codes would collapse
+        # them all into one. Each row is already one active employee record.
+        active_headcount = len(df)
         metrics_to_save.append(("active_headcount", float(active_headcount)))
 
         # 2. Average/Median Monthly Hours

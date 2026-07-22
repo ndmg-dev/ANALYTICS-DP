@@ -171,6 +171,16 @@ class ExcelDeterministicParser:
                             val = datetime(*dt_tuple)
                         except:
                             val = None
+                    elif isinstance(val, str) and val.strip():
+                        # Some templates export dates as plain text (dd/mm/yyyy or dd-mm-yyyy)
+                        raw_date = val.strip()
+                        val = None
+                        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y"):
+                            try:
+                                val = datetime.strptime(raw_date, fmt)
+                                break
+                            except ValueError:
+                                continue
                     else:
                         val = None
                 else:
