@@ -30,6 +30,11 @@ class ExcelDeterministicParser:
         ("salario", "remuneracao", "base", "vencimento"): "salary"
     }
 
+    # Some export templates (e.g. simplified headcount lists) only carry these
+    # fields — code, hours, dependents, union/FGTS flags are optional and are
+    # simply left null when the source spreadsheet doesn't have them.
+    ESSENTIAL_HEADERS = {"name", "job_title", "category", "admission_date", "salary"}
+
     def _normalize_header(self, text: str) -> str:
         if not isinstance(text, str):
             return ""
@@ -54,13 +59,6 @@ class ExcelDeterministicParser:
                 return result
 
         sheet = book.sheet_by_index(0)
-        
-        # 1. Header candidate detection and Company extraction
-        company_name = ""
-        if sheet.nrows > 0:
-            val = sheet.cell_value(0, 0)
-            if isinstance(val, str) and val.strip() != "":
-                company_name = val.strip()
 
         header_row_idx = -1
         column_mapping = {}
@@ -83,8 +81,19 @@ class ExcelDeterministicParser:
             result.error_details = "Could not identify header row."
             return result
 
-        # Calculate Header Anchor Quality
-        header_quality = len(column_mapping) / len(self.REQUIRED_HEADERS)
+        # Company name (when present) is a title row above the header — never
+        # the header row itself, which would otherwise get misread as the name.
+        company_name = ""
+        if header_row_idx > 0:
+            val = sheet.cell_value(0, 0)
+            if isinstance(val, str) and val.strip() != "":
+                company_name = val.strip()
+
+        # Calculate Header Anchor Quality based on essential columns only —
+        # optional columns (code, hours, dependents, union/FGTS) may be absent
+        # in simplified export templates without invalidating the import.
+        essential_found = len(self.ESSENTIAL_HEADERS & column_mapping.keys())
+        header_quality = essential_found / len(self.ESSENTIAL_HEADERS)
         result.confidence_factors["header_anchor_quality"] = header_quality
 
         # 2. Extract Data Rows
@@ -178,7 +187,7 @@ class ExcelDeterministicParser:
         if result.confidence_score >= float(os.getenv("PARSER_CONFIDENCE_THRESHOLD", "0.85")):
             result.is_success = True
         else:
-            missing = [canon_h for canon_h in self.REQUIRED_HEADERS.values() if canon_h not in column_mapping]
+            missing = [canon_h for canon_h in self.ESSENTIAL_HEADERS if canon_h not in column_mapping]
             result.error_details = (
                 f"Confiança de leitura do cabeçalho ({result.confidence_score:.0%}) abaixo do "
                 f"mínimo exigido. Colunas não reconhecidas: {', '.join(missing)}."
