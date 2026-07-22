@@ -1,5 +1,6 @@
 import time
 import os
+import re
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import select, update
@@ -69,9 +70,16 @@ def process_job(db: Session, job: ImportJob):
             # Link snapshot to parser run
             parser_run.snapshot_id = snapshot.id
 
-            incoming_company = None
-            if result.records:
-                incoming_company = result.records[0].get("company", "Mendonça Galvão Contadores Associados")
+            # The filename ("Empregados - <empresa> - Ativos.xls") is a far more
+            # reliable source for the company than sniffing spreadsheet cells,
+            # which varies by template (e.g. no title row above the header).
+            filename_match = re.search(r"Empregados\s*-\s*(.+?)\s*-\s*Ativos", job.filename_metadata, re.IGNORECASE)
+            incoming_company = filename_match.group(1).strip() if filename_match else None
+            if not incoming_company and result.records:
+                incoming_company = result.records[0].get("company") or None
+
+            for row in result.records:
+                row["company"] = incoming_company
 
             # Carry over old records from the previous snapshot
             last_snapshot = db.scalar(
