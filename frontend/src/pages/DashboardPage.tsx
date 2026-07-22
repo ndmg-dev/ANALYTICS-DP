@@ -1,27 +1,35 @@
+import { useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { Users, Clock, Briefcase, Activity, AlertCircle } from 'lucide-react';
+import { Users, Clock, Briefcase, Activity, AlertCircle, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
 export function DashboardPage() {
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+
   const { data: latestSnapshot, isLoading: isLoadingSnapshot } = useQuery({
     queryKey: ['latest-snapshot'],
     queryFn: () => api.get('/imports/latest-snapshot')
   });
 
   const snapshotId = latestSnapshot?.snapshot_id;
+  const companyQuery = selectedCompany ? `?company=${encodeURIComponent(selectedCompany)}` : '';
 
   const { data: metricsData, isLoading: isLoadingMetrics } = useQuery({
-    queryKey: ['metrics', snapshotId],
-    queryFn: () => api.get(`/metrics/dashboard/${snapshotId}`),
+    queryKey: ['metrics', snapshotId, selectedCompany],
+    queryFn: () => api.get(`/metrics/dashboard/${snapshotId}${companyQuery}`),
     enabled: !!snapshotId
   });
 
   const { data: distData } = useQuery({
-    queryKey: ['distributions', snapshotId],
-    queryFn: () => api.get(`/metrics/distributions/${snapshotId}`),
+    queryKey: ['distributions', snapshotId, selectedCompany],
+    queryFn: () => api.get(`/metrics/distributions/${snapshotId}${companyQuery}`),
     enabled: !!snapshotId
   });
+
+  const toggleCompanyFilter = (name: string) => {
+    setSelectedCompany(prev => prev === name ? null : name);
+  };
 
   if (isLoadingSnapshot || isLoadingMetrics) {
     return (
@@ -88,9 +96,12 @@ export function DashboardPage() {
   };
 
   // Chart Options
+  const companyPalette = ['#D4A843', '#8A6E2C', '#F2C94C', '#5C4A1E'];
+  const companyEntries = Object.entries(company);
+
   const companyOption = {
     tooltip: { trigger: 'item', formatter: buildTooltip, backgroundColor: '#1E1E1E', borderColor: '#333', textStyle: { color: '#FFF' } },
-    legend: { bottom: '0%', left: 'center', textStyle: { color: '#8A8A8A' } },
+    legend: { show: false },
     series: [
       {
         name: 'Empresa',
@@ -101,10 +112,23 @@ export function DashboardPage() {
         label: { show: false, position: 'center' },
         emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold', color: '#FFF' } },
         labelLine: { show: false },
-        data: Object.entries(company).map(([k, v]: any) => ({ name: k, value: v.count, employees: v.employees }))
+        data: companyEntries.map(([k, v]: any) => ({
+          name: k,
+          value: v.count,
+          employees: v.employees,
+          itemStyle: selectedCompany && selectedCompany !== k ? { opacity: 0.3 } : undefined
+        }))
       }
     ],
-    color: ['#D4A843', '#8A6E2C', '#F2C94C', '#5C4A1E']
+    color: companyPalette
+  };
+
+  const companyChartEvents = {
+    click: (params: any) => {
+      if (params.componentType === 'series') {
+        toggleCompanyFilter(params.name);
+      }
+    }
   };
 
   const tenureOption = {
@@ -154,6 +178,15 @@ export function DashboardPage() {
           <h1 className="text-2xl font-semibold text-text-primary">Visão Geral Estratégica</h1>
           <p className="text-text-muted text-sm mt-1">Snapshot de referência: {new Date(latestSnapshot?.reference_date).toLocaleDateString('pt-BR') || 'Atual'}</p>
         </div>
+        {selectedCompany && (
+          <button
+            onClick={() => setSelectedCompany(null)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gold/10 border border-gold/30 rounded-lg text-sm text-gold hover:bg-gold/20 transition-colors"
+          >
+            Filtrado: {selectedCompany}
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -217,7 +250,19 @@ export function DashboardPage() {
           <h3 className="text-lg font-medium text-text-primary mb-4 flex items-center">
             Distribuição por Empresa
           </h3>
-          <ReactECharts option={companyOption} style={{ height: '300px' }} />
+          <ReactECharts option={companyOption} onEvents={companyChartEvents} style={{ height: '260px' }} />
+          <div className="flex flex-wrap justify-center gap-3 mt-2">
+            {companyEntries.map(([name], i) => (
+              <button
+                key={name}
+                onClick={() => toggleCompanyFilter(name)}
+                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-opacity ${selectedCompany && selectedCompany !== name ? 'opacity-40' : 'opacity-100'}`}
+              >
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: companyPalette[i % companyPalette.length] }} />
+                <span className="text-text-muted">{name}</span>
+              </button>
+            ))}
+          </div>
         </div>
         
         <div className="glass-card p-5">
