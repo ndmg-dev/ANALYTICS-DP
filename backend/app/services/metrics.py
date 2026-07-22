@@ -78,6 +78,7 @@ class MetricsEngine:
             metrics_to_save.append(("median_tenure_days", float(tenure_days.median())))
 
         # 6. Salary (Only if authorized and supported, will just compute raw if present)
+        df["salary"] = pd.to_numeric(df["salary"], errors="coerce")
         if not df["salary"].isnull().all():
             metrics_to_save.append(("total_payroll", float(df["salary"].sum())))
             metrics_to_save.append(("avg_salary", float(df["salary"].mean())))

@@ -1,5 +1,6 @@
 import time
 import os
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import select, update
 from app.db.session import SessionLocal
@@ -143,11 +144,11 @@ def process_job(db: Session, job: ImportJob):
         db.commit()
         print(f"Processed job {job.id} - Status: {job.status}")
 
-    except Exception as e:
+    except Exception:
         db.rollback()
         job.status = ImportStatus.FAILED
         job.completed_at = datetime.utcnow()
-        print(f"Error processing job {job.id}: {e}")
+        logging.exception(f"Error processing job {job.id}")
         db.commit()
 
 def run_worker():
