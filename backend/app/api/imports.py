@@ -63,13 +63,19 @@ async def list_imports(db: Session = Depends(get_db)):
         if job.snapshots:
             from app.models import EmployeeRecord
             records = db.query(EmployeeRecord).filter(EmployeeRecord.snapshot_id == job.snapshots[0].id).count()
-            
+
+        error_message = None
+        if job.parser_runs:
+            last_run = max(job.parser_runs, key=lambda r: r.id)
+            error_message = last_run.error_details or None
+
         result.append({
             "id": job.id,
             "filename": job.filename_metadata,
             "status": job.status.value if hasattr(job.status, 'value') else job.status,
             "date": job.uploaded_at.strftime("%d/%m/%Y %H:%M") if job.uploaded_at else "",
-            "records": records
+            "records": records,
+            "error_message": error_message
         })
     return result
 

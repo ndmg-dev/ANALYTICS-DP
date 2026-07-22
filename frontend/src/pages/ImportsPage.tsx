@@ -171,6 +171,9 @@ export function ImportsPage() {
                           {getStatusDisplay(row.status).icon}
                           {row.status}
                         </span>
+                        {row.error_message && (
+                          <p className="text-xs text-danger/80 mt-1 max-w-sm">{row.error_message}</p>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         {RETRYABLE_STATUSES.includes(row.status) && (
