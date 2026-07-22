@@ -50,14 +50,28 @@ export function ImportsPage() {
     });
   };
 
+  const retryMutation = useMutation({
+    mutationFn: (importId: number) => api.post(`/imports/${importId}/retry`, {}),
+    onSuccess: () => {
+      toast.success('Reprocessamento iniciado.');
+      queryClient.invalidateQueries({ queryKey: ['imports'] });
+    },
+    onError: (err: any) => {
+      toast.error(`Erro ao reprocessar: ${err.message}`);
+    }
+  });
+
+  const RETRYABLE_STATUSES = ['Falha', 'Aguardando Revisão'];
+
   const getStatusDisplay = (status: string) => {
     switch(status) {
       case 'Concluído': return { icon: <CheckCircle2 size={14} />, classes: 'bg-success/10 text-success border border-success/20' };
-      case 'Falha': return { icon: <AlertTriangle size={14} />, classes: 'bg-danger/10 text-danger border border-danger/20' };
+      case 'Falha':
+      case 'Aguardando Revisão':
+        return { icon: <AlertTriangle size={14} />, classes: 'bg-danger/10 text-danger border border-danger/20' };
       case 'Recebido':
       case 'Na Fila':
       case 'Em Processamento':
-      case 'Aguardando Revisão':
         return { icon: <Loader2 size={14} className="animate-spin" />, classes: 'bg-warning/10 text-warning border border-warning/20' };
       default: return { icon: <Info size={14} />, classes: 'bg-info/10 text-info border border-info/20' };
     }
@@ -136,12 +150,13 @@ export function ImportsPage() {
                   <th className="px-6 py-3 font-medium">Data</th>
                   <th className="px-6 py-3 font-medium">Registros</th>
                   <th className="px-6 py-3 font-medium">Status</th>
+                  <th className="px-6 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {history.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-text-muted">
+                    <td colSpan={5} className="px-6 py-8 text-center text-text-muted">
                       Nenhuma importação realizada ainda.
                     </td>
                   </tr>
@@ -156,6 +171,17 @@ export function ImportsPage() {
                           {getStatusDisplay(row.status).icon}
                           {row.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {RETRYABLE_STATUSES.includes(row.status) && (
+                          <button
+                            className="text-xs text-gold hover:underline disabled:opacity-50"
+                            disabled={retryMutation.isPending}
+                            onClick={() => retryMutation.mutate(row.id)}
+                          >
+                            Reprocessar
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))

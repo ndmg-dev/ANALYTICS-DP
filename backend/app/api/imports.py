@@ -73,6 +73,22 @@ async def list_imports(db: Session = Depends(get_db)):
         })
     return result
 
+@router.post("/{import_id}/retry")
+async def retry_import(import_id: int, db: Session = Depends(get_db)):
+    job = db.query(ImportJob).filter(ImportJob.id == import_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Importação não encontrada.")
+
+    if job.status not in (ImportStatus.FAILED, ImportStatus.AWAITING_REVIEW):
+        raise HTTPException(status_code=400, detail="Somente importações com falha podem ser reprocessadas.")
+
+    job.status = ImportStatus.QUEUED
+    job.started_at = None
+    job.completed_at = None
+    db.commit()
+
+    return {"message": "Importação reenfileirada para reprocessamento.", "import_id": job.id, "status": job.status}
+
 @router.get("/latest-snapshot")
 async def get_latest_snapshot(db: Session = Depends(get_db)):
     from app.models import Snapshot

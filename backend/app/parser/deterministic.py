@@ -177,7 +177,13 @@ class ExcelDeterministicParser:
         result.confidence_score = header_quality * 1.0  # Basic for now
         if result.confidence_score >= float(os.getenv("PARSER_CONFIDENCE_THRESHOLD", "0.85")):
             result.is_success = True
-            
+        else:
+            missing = [canon_h for canon_h in self.REQUIRED_HEADERS.values() if canon_h not in column_mapping]
+            result.error_details = (
+                f"Confiança de leitura do cabeçalho ({result.confidence_score:.0%}) abaixo do "
+                f"mínimo exigido. Colunas não reconhecidas: {', '.join(missing)}."
+            )
+
         result.data_quality_score = 100.0 # Placeholder
         
         return result
