@@ -76,6 +76,7 @@ export function EmployeesPage() {
       { header: 'Categoria', key: 'category', width: 15 },
       { header: 'Empresa', key: 'company', width: 45 },
       { header: 'Admissão', key: 'admission_date', width: 15 },
+      { header: 'Salário', key: 'salary', width: 18 },
       { header: 'Observações', key: 'notes', width: 50 },
     ];
 
@@ -102,6 +103,7 @@ export function EmployeesPage() {
         category: emp.category || '-',
         company: emp.company || '-',
         admission_date: emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-',
+        salary: typeof emp.salary === 'number' ? emp.salary.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-',
         notes: emp.notes || '-'
       });
     });
@@ -186,6 +188,7 @@ export function EmployeesPage() {
                   <th className="px-6 py-3 font-medium">Categoria</th>
                   <th className="px-6 py-3 font-medium">Empresa</th>
                   <th className="px-6 py-3 font-medium">Admissão</th>
+                  <th className="px-6 py-3 font-medium">Salário</th>
                   <th className="px-6 py-3 font-medium">Observações</th>
                 </tr>
               </thead>
@@ -209,6 +212,7 @@ export function EmployeesPage() {
                       <span className="truncate block max-w-[150px]" title={emp.company}>{emp.company || '-'}</span>
                     </td>
                     <td className="px-6 py-4 text-text-muted">{emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-'}</td>
+                    <td className="px-6 py-4 text-text-muted">{typeof emp.salary === 'number' ? emp.salary.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
                     <td className="px-6 py-4 text-text-muted">
                       <div className="flex items-center gap-3">
                         <span className="truncate block max-w-[100px]" title={emp.notes}>{emp.notes || '-'}</span>

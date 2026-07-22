@@ -1,6 +1,5 @@
 import time
 import os
-import re
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import select, update
@@ -8,6 +7,7 @@ from app.db.session import SessionLocal
 from app.models import ImportJob, ImportStatus, ParserRun
 from app.parser.deterministic import ExcelDeterministicParser
 from app.storage.minio_client import MinioClient
+from app.utils import extract_company_from_filename
 from datetime import datetime
 
 minio_client = MinioClient()
@@ -73,47 +73,18 @@ def process_job(db: Session, job: ImportJob):
             # The filename ("Empregados - <empresa> - Ativos.xls") is a far more
             # reliable source for the company than sniffing spreadsheet cells,
             # which varies by template (e.g. no title row above the header).
-            filename_match = re.search(r"Empregados\s*-\s*(.+?)\s*-\s*Ativos", job.filename_metadata, re.IGNORECASE)
-            incoming_company = filename_match.group(1).strip() if filename_match else None
+            incoming_company = extract_company_from_filename(job.filename_metadata)
             if not incoming_company and result.records:
                 incoming_company = result.records[0].get("company") or None
 
             for row in result.records:
                 row["company"] = incoming_company
 
-            # Carry over old records from the previous snapshot
-            last_snapshot = db.scalar(
-                select(Snapshot)
-                .where(Snapshot.status == "ACTIVE", Snapshot.id < snapshot.id)
-                .order_by(Snapshot.id.desc())
-                .limit(1)
-            )
-
-            if last_snapshot and incoming_company:
-                old_records = db.scalars(
-                    select(EmployeeRecord).where(EmployeeRecord.snapshot_id == last_snapshot.id)
-                ).all()
-                
-                for old_emp in old_records:
-                    old_company = (old_emp.raw_data or {}).get("company", "N/A")
-                    if old_company != incoming_company:
-                        new_emp = EmployeeRecord(
-                            snapshot_id=snapshot.id,
-                            original_row=old_emp.original_row,
-                            code=old_emp.code,
-                            name=old_emp.name,
-                            job_title=old_emp.job_title,
-                            category=old_emp.category,
-                            monthly_hours=old_emp.monthly_hours,
-                            children_count=old_emp.children_count,
-                            dependents_count=old_emp.dependents_count,
-                            admission_date=old_emp.admission_date,
-                            fgts_option=old_emp.fgts_option,
-                            union_contribution=old_emp.union_contribution,
-                            salary=old_emp.salary,
-                            raw_data=old_emp.raw_data
-                        )
-                        db.add(new_emp)
+            # Each snapshot only holds the records from its own file. Other
+            # companies' current employees are pulled in at read time (see
+            # app/services/consolidation.py) from their own latest completed
+            # import, instead of being copied here — copying used to compound
+            # duplicates every time a file was reprocessed.
 
             # Save incoming Employee Records
             for row in result.records:

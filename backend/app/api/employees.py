@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.db.session import get_db
-from app.models import EmployeeRecord, Snapshot, EmployeeNote
+from app.models import Snapshot, EmployeeNote
+from app.services.consolidation import get_consolidated_employee_records
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
 
@@ -16,9 +17,11 @@ async def list_employees(snapshot_id: int, db: Session = Depends(get_db)):
     snapshot = db.query(Snapshot).filter(Snapshot.id == snapshot_id).first()
     if not snapshot:
         raise HTTPException(status_code=404, detail="Snapshot não encontrado")
-        
-    employees = db.query(EmployeeRecord).filter(EmployeeRecord.snapshot_id == snapshot_id).all()
-    
+
+    # The current workforce spans every company's own latest completed
+    # import, not just this one snapshot — see app/services/consolidation.py.
+    employees = get_consolidated_employee_records(db)
+
     # Fetch all notes
     notes_db = db.query(EmployeeNote).all()
     notes_map = {(n.company, n.code): n.notes for n in notes_db}
@@ -34,6 +37,7 @@ async def list_employees(snapshot_id: int, db: Session = Depends(get_db)):
             "company": company,
             "category": emp.category,
             "admission_date": emp.admission_date,
+            "salary": emp.salary,
             "notes": notes_map.get((company, emp.code), ""),
             "status": "Ativo"
         })

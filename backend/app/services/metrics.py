@@ -15,9 +15,32 @@ class MetricsEngine:
 
         stmt = select(EmployeeRecord).where(EmployeeRecord.snapshot_id == snapshot_id)
         records = self.db.scalars(stmt).all()
-        
+
         if not records:
             return
+
+        metrics_to_save = self.compute_metrics_for_records(records, snapshot.reference_date)
+
+        # Clear old metrics and save new ones
+        self.db.query(MetricResult).filter(MetricResult.snapshot_id == snapshot_id).delete()
+
+        for metric_id, val in metrics_to_save:
+            mr = MetricResult(
+                snapshot_id=snapshot_id,
+                metric_id=metric_id,
+                metric_value=val,
+                calculated_at=datetime.utcnow()
+            )
+            self.db.add(mr)
+
+        self.db.commit()
+
+    def compute_metrics_for_records(self, records, reference_date):
+        """Compute metrics for an arbitrary set of employee records (e.g. the
+        consolidated workforce across several companies' latest imports)
+        without persisting them against a single snapshot."""
+        if not records:
+            return []
 
         # Convert to DataFrame for analytical processing
         data = [
@@ -72,11 +95,11 @@ class MetricsEngine:
         # 5. Tenure (in days)
         valid_dates = df.dropna(subset=["admission_date"])
         if not valid_dates.empty:
-            ref_date = pd.to_datetime(snapshot.reference_date)
+            ref_date = pd.to_datetime(reference_date)
             # Ensure admission_date is datetime
             df["admission_date"] = pd.to_datetime(df["admission_date"])
             tenure_days = (ref_date - df["admission_date"]).dt.days
-            
+
             metrics_to_save.append(("avg_tenure_days", float(tenure_days.mean())))
             metrics_to_save.append(("median_tenure_days", float(tenure_days.median())))
 
@@ -86,29 +109,23 @@ class MetricsEngine:
             metrics_to_save.append(("total_payroll", float(df["salary"].sum())))
             metrics_to_save.append(("avg_salary", float(df["salary"].mean())))
 
-        # Clear old metrics and save new ones
-        self.db.query(MetricResult).filter(MetricResult.snapshot_id == snapshot_id).delete()
-
-        for metric_id, val in metrics_to_save:
-            mr = MetricResult(
-                snapshot_id=snapshot_id,
-                metric_id=metric_id,
-                metric_value=val,
-                calculated_at=datetime.utcnow()
-            )
-            self.db.add(mr)
-        
-        self.db.commit()
+        return metrics_to_save
 
     def get_distributions(self, snapshot_id: int):
         stmt = select(EmployeeRecord).where(EmployeeRecord.snapshot_id == snapshot_id)
         records = self.db.scalars(stmt).all()
-        
+
         if not records:
             return {}
 
         snapshot = self.db.get(Snapshot, snapshot_id)
-        ref_date = pd.to_datetime(snapshot.reference_date)
+        return self.compute_distributions_for_records(records, snapshot.reference_date)
+
+    def compute_distributions_for_records(self, records, reference_date):
+        if not records:
+            return {}
+
+        ref_date = pd.to_datetime(reference_date)
 
         data = []
         for r in records:
