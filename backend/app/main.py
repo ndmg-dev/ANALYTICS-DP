@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from app.core.auth import require_access
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,17 +19,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+from app.api.auth import router as auth_router
+app.include_router(auth_router, prefix="/api/v1")
+
 from app.api.imports import router as imports_router
-app.include_router(imports_router, prefix="/api/v1")
+app.include_router(imports_router, prefix="/api/v1", dependencies=[Depends(require_access)])
 
 from app.api.metrics import router as metrics_router
-app.include_router(metrics_router, prefix="/api/v1")
+app.include_router(metrics_router, prefix="/api/v1", dependencies=[Depends(require_access)])
 
 from app.api.employees import router as employees_router
-app.include_router(employees_router, prefix="/api/v1")
+app.include_router(employees_router, prefix="/api/v1", dependencies=[Depends(require_access)])
 
 from app.api.quality import router as quality_router
-app.include_router(quality_router, prefix="/api/v1")
+app.include_router(quality_router, prefix="/api/v1", dependencies=[Depends(require_access)])
 
 # Set up CORS
 app.add_middleware(

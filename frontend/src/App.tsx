@@ -6,25 +6,28 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ImportsPage } from './pages/ImportsPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { QualityPage } from './pages/QualityPage';
+import { LoginGate } from './components/LoginGate';
 
 const queryClient = new QueryClient();
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Toaster position="top-right" toastOptions={{ className: 'bg-card text-text-primary border border-border' }} />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<MainLayout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="imports" element={<ImportsPage />} />
-            <Route path="quality" element={<QualityPage />} />
-            <Route path="employees" element={<EmployeesPage />} />
+    <LoginGate>
+      <QueryClientProvider client={queryClient}>
+        <Toaster position="top-right" toastOptions={{ className: 'bg-card text-text-primary border border-border' }} />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<MainLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="imports" element={<ImportsPage />} />
+              <Route path="quality" element={<QualityPage />} />
+              <Route path="employees" element={<EmployeesPage />} />
 
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </LoginGate>
   );
 }
 
