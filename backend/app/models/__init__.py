@@ -24,10 +24,29 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
 
+class Company(Base):
+    """A client company whose payroll spreadsheets are imported.
+
+    The CNPJ is the stable identity — display names vary between export
+    templates ("Suporte" vs "Suporte Serviços Ltda"), while the CNPJ printed
+    in the filename does not."""
+    __tablename__ = "companies"
+    id = Column(Integer, primary_key=True, index=True)
+    cnpj = Column(String(14), unique=True, index=True, nullable=True)
+    name = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    imports = relationship("ImportJob", back_populates="company")
+
+
 class ImportJob(Base):
     __tablename__ = "imports"
     id = Column(Integer, primary_key=True, index=True)
     filename_metadata = Column(String, nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    # What the resolver read off the filename/spreadsheet, kept for auditing
+    # even when the company was later corrected by hand.
+    company_name_raw = Column(String, nullable=True)
     minio_object_key = Column(String, nullable=False, unique=True)
     file_hash = Column(String, nullable=False)
     file_size = Column(Integer, nullable=False)
@@ -38,6 +57,7 @@ class ImportJob(Base):
     completed_at = Column(DateTime, nullable=True)
     attempt_count = Column(Integer, default=0)
     
+    company = relationship("Company", back_populates="imports")
     parser_runs = relationship("ParserRun", back_populates="import_job")
     snapshots = relationship("Snapshot", back_populates="import_job")
 
@@ -77,12 +97,7 @@ class EmployeeRecord(Base):
     name = Column(String, nullable=False)
     job_title = Column(String, nullable=False)
     category = Column(String, nullable=False)
-    monthly_hours = Column(Float, nullable=True)
-    children_count = Column(Integer, nullable=True)
-    dependents_count = Column(Integer, nullable=True)
     admission_date = Column(DateTime, nullable=True)
-    fgts_option = Column(Boolean, nullable=True)
-    union_contribution = Column(Boolean, nullable=True)
     salary = Column(Float, nullable=True)  # Using Float for MVP, could use Numeric
     raw_data = Column(JSON, nullable=True)
 
@@ -123,7 +138,11 @@ class MetricResult(Base):
 class EmployeeNote(Base):
     __tablename__ = "employee_notes"
     id = Column(Integer, primary_key=True, index=True)
+    # `company` (the display name) is kept for backwards compatibility with
+    # notes written before companies became first-class; `company_id` is the
+    # key new notes are stored under.
     company = Column(String, nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
     code = Column(String, nullable=False, index=True)
     notes = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

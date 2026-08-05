@@ -20,6 +20,19 @@ const handleResponse = async (response: Response) => {
   return response.json();
 };
 
+/** Appends query params, skipping null/undefined so callers don't have to
+ *  build the query string by hand for every optional filter. */
+export const withQuery = (endpoint: string, params: Record<string, any> = {}) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== '') {
+      search.append(key, String(value));
+    }
+  });
+  const qs = search.toString();
+  return qs ? `${endpoint}?${qs}` : endpoint;
+};
+
 export const api = {
   get: async (endpoint: string) => {
     const response = await fetch(`${API_BASE}${endpoint}`, { headers: authHeaders() });
@@ -30,6 +43,22 @@ export const api = {
       method: 'POST',
       headers: authHeaders(),
       body
+    });
+    return handleResponse(response);
+  },
+  patch: async (endpoint: string, body: any) => {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body)
+    });
+    return handleResponse(response);
+  },
+  postJson: async (endpoint: string, body: any) => {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body)
     });
     return handleResponse(response);
   },

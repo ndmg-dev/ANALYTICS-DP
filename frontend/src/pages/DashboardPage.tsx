@@ -2,10 +2,16 @@ import { useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Users, Clock, Briefcase, Activity, AlertCircle, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { api, withQuery } from '../lib/api';
+import { CompanySelect } from '../components/CompanySelect';
+import { useCompanies } from '../lib/useCompanies';
 
 export function DashboardPage() {
-  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  // Filtering is by company id, not by display name — the selector, the pie
+  // slices and the legend chips all drive this single piece of state.
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
+  const { data: companies = [] } = useCompanies();
+  const selectedCompanyName = companies.find(c => c.id === selectedCompanyId)?.name;
 
   const { data: latestSnapshot, isLoading: isLoadingSnapshot } = useQuery({
     queryKey: ['latest-snapshot'],
@@ -13,22 +19,22 @@ export function DashboardPage() {
   });
 
   const snapshotId = latestSnapshot?.snapshot_id;
-  const companyQuery = selectedCompany ? `?company=${encodeURIComponent(selectedCompany)}` : '';
 
   const { data: metricsData, isLoading: isLoadingMetrics } = useQuery({
-    queryKey: ['metrics', snapshotId, selectedCompany],
-    queryFn: () => api.get(`/metrics/dashboard/${snapshotId}${companyQuery}`),
+    queryKey: ['metrics', snapshotId, selectedCompanyId],
+    queryFn: () => api.get(withQuery(`/metrics/dashboard/${snapshotId}`, { company_id: selectedCompanyId })),
     enabled: !!snapshotId
   });
 
   const { data: distData } = useQuery({
-    queryKey: ['distributions', snapshotId, selectedCompany],
-    queryFn: () => api.get(`/metrics/distributions/${snapshotId}${companyQuery}`),
+    queryKey: ['distributions', snapshotId, selectedCompanyId],
+    queryFn: () => api.get(withQuery(`/metrics/distributions/${snapshotId}`, { company_id: selectedCompanyId })),
     enabled: !!snapshotId
   });
 
-  const toggleCompanyFilter = (name: string) => {
-    setSelectedCompany(prev => prev === name ? null : name);
+  const toggleCompanyFilter = (companyId: number | null) => {
+    if (!companyId) return;
+    setSelectedCompanyId(prev => prev === companyId ? null : companyId);
   };
 
   if (isLoadingSnapshot || isLoadingMetrics) {
@@ -58,7 +64,6 @@ export function DashboardPage() {
   const metrics = {
     active_headcount: m.active_headcount || 0,
     avg_tenure_days: Math.round(m.avg_tenure_days || 0),
-    median_monthly_hours: Math.round(m.median_monthly_hours || 0),
     total_payroll: m.total_payroll,
     quality_score: 95
   };
@@ -73,7 +78,6 @@ export function DashboardPage() {
   };
 
   const hasSalaryData = metrics.total_payroll !== undefined && metrics.total_payroll > 0;
-  const hasHoursData = metrics.median_monthly_hours > 0;
   const hasTenureData = metrics.avg_tenure_days > 0;
 
   // Tooltip Formatter
@@ -116,7 +120,8 @@ export function DashboardPage() {
           name: k,
           value: v.count,
           employees: v.employees,
-          itemStyle: selectedCompany && selectedCompany !== k ? { opacity: 0.3 } : undefined
+          companyId: v.company_id,
+          itemStyle: selectedCompanyId && v.company_id !== selectedCompanyId ? { opacity: 0.3 } : undefined
         }))
       }
     ],
@@ -126,7 +131,7 @@ export function DashboardPage() {
   const companyChartEvents = {
     click: (params: any) => {
       if (params.componentType === 'series') {
-        toggleCompanyFilter(params.name);
+        toggleCompanyFilter(params.data?.companyId);
       }
     }
   };
@@ -178,15 +183,18 @@ export function DashboardPage() {
           <h1 className="text-2xl font-semibold text-text-primary">Visão Geral Estratégica</h1>
           <p className="text-text-muted text-sm mt-1">Snapshot de referência: {new Date(latestSnapshot?.reference_date).toLocaleDateString('pt-BR') || 'Atual'}</p>
         </div>
-        {selectedCompany && (
-          <button
-            onClick={() => setSelectedCompany(null)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-gold/10 border border-gold/30 rounded-lg text-sm text-gold hover:bg-gold/20 transition-colors"
-          >
-            Filtrado: {selectedCompany}
-            <X size={14} />
-          </button>
-        )}
+        <div className="flex items-end gap-3">
+          {selectedCompanyId && (
+            <button
+              onClick={() => setSelectedCompanyId(null)}
+              className="flex items-center gap-2 px-3 py-1.5 h-[38px] bg-gold/10 border border-gold/30 rounded-lg text-sm text-gold hover:bg-gold/20 transition-colors"
+            >
+              Filtrado: {selectedCompanyName}
+              <X size={14} />
+            </button>
+          )}
+          <CompanySelect value={selectedCompanyId} onChange={setSelectedCompanyId} />
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -252,11 +260,11 @@ export function DashboardPage() {
           </h3>
           <ReactECharts option={companyOption} onEvents={companyChartEvents} style={{ height: '260px' }} />
           <div className="flex flex-wrap justify-center gap-3 mt-2">
-            {companyEntries.map(([name], i) => (
+            {companyEntries.map(([name, bucket]: any, i) => (
               <button
                 key={name}
-                onClick={() => toggleCompanyFilter(name)}
-                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-opacity ${selectedCompany && selectedCompany !== name ? 'opacity-40' : 'opacity-100'}`}
+                onClick={() => toggleCompanyFilter(bucket.company_id)}
+                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-opacity ${selectedCompanyId && selectedCompanyId !== bucket.company_id ? 'opacity-40' : 'opacity-100'}`}
               >
                 <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: companyPalette[i % companyPalette.length] }} />
                 <span className="text-text-muted">{name}</span>
@@ -298,15 +306,6 @@ export function DashboardPage() {
                 </div>
               </div>
             )}
-            {!hasHoursData && (
-              <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg flex items-start gap-3">
-                <div className="text-warning mt-0.5"><AlertCircle size={18} /></div>
-                <div>
-                  <p className="text-sm font-medium text-warning">Horas não identificadas</p>
-                  <p className="text-xs text-text-muted mt-1">A coluna de Carga Horária Mensal não foi encontrada.</p>
-                </div>
-              </div>
-            )}
             {!hasTenureData && (
               <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg flex items-start gap-3">
                 <div className="text-warning mt-0.5"><AlertCircle size={18} /></div>
@@ -316,7 +315,7 @@ export function DashboardPage() {
                 </div>
               </div>
             )}
-            {hasSalaryData && hasHoursData && hasTenureData && (
+            {hasSalaryData && hasTenureData && (
               <div className="p-3 bg-success/10 border border-success/20 rounded-lg flex items-start gap-3">
                 <div className="text-success mt-0.5"><Activity size={18} /></div>
                 <div>

@@ -2,10 +2,13 @@ import { useState, useRef } from 'react';
 import { Upload, FileUp, CheckCircle2, Loader2, AlertTriangle, Info } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { CompanySelect } from '../components/CompanySelect';
 import toast from 'react-hot-toast';
 
 export function ImportsPage() {
   const [isDragging, setIsDragging] = useState(false);
+  // null = let the backend identify the company from the file's CNPJ/name.
+  const [uploadCompanyId, setUploadCompanyId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -19,15 +22,18 @@ export function ImportsPage() {
     mutationFn: (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
+      if (uploadCompanyId) formData.append('company_id', String(uploadCompanyId));
       return api.post('/imports/upload', formData);
     },
     onMutate: (file) => {
       toast.loading(`Enviando ${file.name}...`, { id: file.name });
     },
-    onSuccess: (_, file) => {
-      toast.success(`${file.name} enviado! Processando...`, { id: file.name });
+    onSuccess: (data, file) => {
+      const suffix = data?.company ? ` (${data.company})` : '';
+      toast.success(`${file.name} enviado!${suffix} Processando...`, { id: file.name });
       queryClient.invalidateQueries({ queryKey: ['imports'] });
       queryClient.invalidateQueries({ queryKey: ['latest-snapshot'] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
     },
     onError: (err, file) => {
       toast.error(`Erro ao enviar ${file.name}: ${err.message}`, { id: file.name });
@@ -60,6 +66,28 @@ export function ImportsPage() {
       toast.error(`Erro ao reprocessar: ${err.message}`);
     }
   });
+
+  // Escape hatch for files whose name carries neither a CNPJ nor a
+  // recognizable company — without this they'd stay invisible everywhere.
+  const assignCompanyMutation = useMutation({
+    mutationFn: ({ importId, companyName }: { importId: number, companyName: string }) =>
+      api.patch(`/imports/${importId}/company`, { company_name: companyName }),
+    onSuccess: () => {
+      toast.success('Empresa vinculada. Reprocesse a importação para atualizar os dados.');
+      queryClient.invalidateQueries({ queryKey: ['imports'] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    },
+    onError: (err: any) => toast.error(`Erro ao vincular empresa: ${err.message}`)
+  });
+
+  const handleAssignCompany = (importId: number) => {
+    const companyName = window.prompt('Informe o nome da empresa desta importação:');
+    if (companyName && companyName.trim()) {
+      assignCompanyMutation.mutate({ importId, companyName: companyName.trim() });
+    }
+  };
 
   const RETRYABLE_STATUSES = ['Falha', 'Aguardando Revisão'];
 
@@ -124,8 +152,22 @@ export function ImportsPage() {
           }}
         />
         
-        <button 
-          className="btn-primary mt-6 flex items-center gap-2"
+        <div className="mt-6 flex flex-col items-center gap-1">
+          <CompanySelect
+            value={uploadCompanyId}
+            onChange={setUploadCompanyId}
+            label="Empresa"
+            allLabel="Detectar automaticamente"
+            onlyWithEmployees={false}
+          />
+          <p className="text-xs text-text-muted max-w-sm text-center mt-1">
+            A empresa é identificada pelo CNPJ ou pelo nome no arquivo. Selecione manualmente
+            apenas se quiser forçar uma empresa específica.
+          </p>
+        </div>
+
+        <button
+          className="btn-primary mt-4 flex items-center gap-2"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadMutation.isPending}
         >
@@ -147,6 +189,7 @@ export function ImportsPage() {
               <thead className="bg-white/5 text-text-muted">
                 <tr>
                   <th className="px-6 py-3 font-medium">Arquivo</th>
+                  <th className="px-6 py-3 font-medium">Empresa</th>
                   <th className="px-6 py-3 font-medium">Data</th>
                   <th className="px-6 py-3 font-medium">Registros</th>
                   <th className="px-6 py-3 font-medium">Status</th>
@@ -156,7 +199,7 @@ export function ImportsPage() {
               <tbody className="divide-y divide-border">
                 {history.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-text-muted">
+                    <td colSpan={6} className="px-6 py-8 text-center text-text-muted">
                       Nenhuma importação realizada ainda.
                     </td>
                   </tr>
@@ -164,6 +207,21 @@ export function ImportsPage() {
                   history.map((row: any) => (
                     <tr key={row.id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-6 py-4 font-medium text-text-primary">{row.filename}</td>
+                      <td className="px-6 py-4">
+                        {row.company ? (
+                          <span className="text-text-muted">{row.company}</span>
+                        ) : (
+                          <button
+                            onClick={() => handleAssignCompany(row.id)}
+                            disabled={assignCompanyMutation.isPending}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning border border-warning/20 hover:bg-warning/20 transition-colors disabled:opacity-50"
+                            title="Esta importação não aparece nos relatórios até ter uma empresa vinculada"
+                          >
+                            <AlertTriangle size={12} />
+                            Empresa não identificada
+                          </button>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-text-muted">{row.date}</td>
                       <td className="px-6 py-4 text-text-muted">{row.records || '-'}</td>
                       <td className="px-6 py-4">

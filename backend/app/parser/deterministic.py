@@ -16,23 +16,19 @@ class ParserResult:
         self.error_details: str = ""
 
 class ExcelDeterministicParser:
+    # The canonical export carries name, admission date, salary, category and
+    # job title. Payroll detail some templates also print (hours, dependents,
+    # children, FGTS and union flags) is not used by any metric and is not
+    # read. `code` is optional — the current template numbers rows instead.
     REQUIRED_HEADERS = {
         ("codigo",): "code",
         ("nome",): "name",
         ("cargo",): "job_title",
         ("categoria",): "category",
-        ("hor.", "horas", "carga hor", "hrs mensais", "horaria"): "monthly_hours",
-        ("nf", "num fil", "filhos"): "children_count",
-        ("nd", "num dep", "dependentes"): "dependents_count",
         ("admissao", "dt adm", "data adm", "dt. adm.", "dt admissao"): "admission_date",
-        ("sin", "sindical", "contribuicao"): "union_contribution",
-        ("opt", "fgts"): "fgts_option",
         ("salario", "remuneracao", "base", "vencimento"): "salary"
     }
 
-    # Some export templates (e.g. simplified headcount lists) only carry these
-    # fields — code, hours, dependents, union/FGTS flags are optional and are
-    # simply left null when the source spreadsheet doesn't have them.
     ESSENTIAL_HEADERS = {"name", "job_title", "category", "admission_date", "salary"}
 
     def _normalize_header(self, text: str) -> str:
@@ -64,15 +60,16 @@ class ExcelDeterministicParser:
         column_mapping = {}
         for rowx in range(min(20, sheet.nrows)):
             row_values = sheet.row_values(rowx)
-            mapped_count = 0
             temp_mapping = {}
             for colx, cell_val in enumerate(row_values):
                 norm_val = self._normalize_header(str(cell_val))
                 for req_h_list, canon_h in self.REQUIRED_HEADERS.items():
                     if any(req in norm_val for req in req_h_list):
                         temp_mapping[canon_h] = colx
-                        mapped_count += 1
-            if mapped_count >= 5:  # Arbitrary threshold to consider it a header row
+            # A header row is one that carries most of the essential columns.
+            # Counting every mapped column instead would make detection depend
+            # on optional payroll columns that the current template omits.
+            if len(self.ESSENTIAL_HEADERS & temp_mapping.keys()) >= 4:
                 header_row_idx = rowx
                 column_mapping = temp_mapping
                 break
@@ -137,19 +134,6 @@ class ExcelDeterministicParser:
                 # Conversion logic
                 if canon_h == "code":
                     val = str(int(val)) if isinstance(val, float) else str(val)
-                elif canon_h in ["children_count", "dependents_count"]:
-                    if isinstance(val, str):
-                        clean_val = re.sub(r'[^\d]', '', val)
-                        val = int(clean_val) if clean_val else None
-                    else:
-                        val = int(val) if isinstance(val, (float, int)) else None
-                elif canon_h == "monthly_hours":
-                    if isinstance(val, str):
-                        clean_val = re.sub(r'[^\d,.-]', '', val).replace(',', '.')
-                        try: val = float(clean_val)
-                        except ValueError: val = None
-                    else:
-                        val = float(val) if isinstance(val, (float, int)) else None
                 elif canon_h == "salary":
                     if isinstance(val, str):
                         # Brazilian currency format: R$ 1.500,00 -> 1500.00
@@ -158,11 +142,6 @@ class ExcelDeterministicParser:
                         except ValueError: val = None
                     else:
                         val = float(val) if isinstance(val, (float, int)) else None
-                elif canon_h in ["union_contribution", "fgts_option"]:
-                    val_str = str(val).strip().upper()
-                    if val_str == 'S': val = True
-                    elif val_str == 'N': val = False
-                    else: val = None
                 elif canon_h == "admission_date":
                     if isinstance(val, float):
                         # Excel serial date

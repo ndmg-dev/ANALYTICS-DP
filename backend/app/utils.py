@@ -1,10 +1,10 @@
-import re
-from typing import Optional
+"""Backwards-compatible re-exports.
 
-
-def extract_company_from_filename(filename: str) -> Optional[str]:
-    """Extract the company name from filenames like
-    "Empregados - <empresa> - Ativos.xls" — a far more reliable source than
-    sniffing spreadsheet cells, which varies by template."""
-    match = re.search(r"Empregados\s*-\s*(.+?)\s*-\s*Ativos", filename or "", re.IGNORECASE)
-    return match.group(1).strip() if match else None
+Company identification now lives in app/services/company_resolver.py, which
+handles every export template plus the CNPJ, instead of the single legacy
+filename pattern this module used to implement.
+"""
+from app.services.company_resolver import (  # noqa: F401
+    extract_cnpj_from_filename,
+    extract_company_from_filename,
+)

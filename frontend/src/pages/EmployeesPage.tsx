@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { api, withQuery } from '../lib/api';
+import { CompanySelect } from '../components/CompanySelect';
+import { useCompanies } from '../lib/useCompanies';
 import { Users, FileUser, Edit2, X, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
@@ -11,8 +13,11 @@ export function EmployeesPage() {
   const [selectedEmp, setSelectedEmp] = useState<any>(null);
   const [notes, setNotes] = useState('');
 
-  const [filterCompany, setFilterCompany] = useState('');
+  // The company filter is applied server-side, so the option list comes from
+  // the company registry rather than from whatever rows happen to be loaded.
+  const [filterCompanyId, setFilterCompanyId] = useState<number | null>(null);
   const [filterDate, setFilterDate] = useState('');
+  const { data: companies = [] } = useCompanies();
 
   const { data: latestSnapshot, isLoading: isLoadingSnapshot } = useQuery({
     queryKey: ['latest-snapshot'],
@@ -22,16 +27,13 @@ export function EmployeesPage() {
   const snapshotId = latestSnapshot?.snapshot_id;
 
   const { data: employees = [], isLoading } = useQuery({
-    queryKey: ['employees', snapshotId],
-    queryFn: () => api.get(`/employees/snapshot/${snapshotId}`),
+    queryKey: ['employees', snapshotId, filterCompanyId],
+    queryFn: () => api.get(withQuery(`/employees/snapshot/${snapshotId}`, { company_id: filterCompanyId })),
     enabled: !!snapshotId
   });
 
-  const companies = Array.from(new Set(employees.map((e: any) => e.company || ''))).filter(Boolean) as string[];
-
   const filteredEmployees = employees.filter((emp: any) => {
     let match = true;
-    if (filterCompany && emp.company !== filterCompany) match = false;
     if (filterDate) {
       const empDate = emp.admission_date ? new Date(emp.admission_date).toISOString().split('T')[0] : '';
       if (empDate !== filterDate) match = false;
@@ -40,7 +42,7 @@ export function EmployeesPage() {
   });
 
   const updateNote = useMutation({
-    mutationFn: (data: { company: string, code: string, notes: string }) => api.put('/employees/notes', data),
+    mutationFn: (data: { company: string, company_id: number, code: string, notes: string }) => api.put('/employees/notes', data),
     onSuccess: () => {
       toast.success('Observação salva com sucesso!');
       queryClient.invalidateQueries({ queryKey: ['employees', snapshotId] });
@@ -55,6 +57,7 @@ export function EmployeesPage() {
     if (!selectedEmp) return;
     updateNote.mutate({
       company: selectedEmp.company,
+      company_id: selectedEmp.company_id,
       code: selectedEmp.code,
       notes: notes
     });
@@ -111,7 +114,9 @@ export function EmployeesPage() {
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const today = new Date().toISOString().split('T')[0];
-    saveAs(blob, `Colaboradores_MG_${today}.xlsx`);
+    const companyName = companies.find(c => c.id === filterCompanyId)?.name ?? 'Todas';
+    const slug = companyName.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
+    saveAs(blob, `Colaboradores_${slug}_${today}.xlsx`);
     toast.success('Excel gerado com sucesso!');
   };
 
@@ -124,20 +129,13 @@ export function EmployeesPage() {
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-text-muted">Filtrar por Empresa</label>
-            <select
-              value={filterCompany}
-              onChange={(e) => setFilterCompany(e.target.value)}
-              className="bg-sidebar border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold"
-            >
-              <option value="">Todas as Empresas</option>
-              {companies.map((c, i) => (
-                <option key={i} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          
+          <CompanySelect
+            value={filterCompanyId}
+            onChange={setFilterCompanyId}
+            label="Filtrar por Empresa"
+          />
+
+
           <div className="flex flex-col gap-1">
             <label className="text-xs text-text-muted">Filtrar por Admissão</label>
             <input

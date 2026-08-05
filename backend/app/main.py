@@ -8,7 +8,12 @@ async def lifespan(app: FastAPI):
     # Initialize connections here (db, minio)
     from app.db.session import engine
     from app.models import Base
+    from app.db.bootstrap import ensure_schema, backfill_companies
     Base.metadata.create_all(bind=engine)
+    # create_all doesn't alter existing tables — patch in newer columns and
+    # link legacy imports to their company (see app/db/bootstrap.py).
+    ensure_schema(engine)
+    backfill_companies()
     yield
     # Cleanup here
 
@@ -33,6 +38,9 @@ app.include_router(employees_router, prefix="/api/v1", dependencies=[Depends(req
 
 from app.api.quality import router as quality_router
 app.include_router(quality_router, prefix="/api/v1", dependencies=[Depends(require_access)])
+
+from app.api.companies import router as companies_router
+app.include_router(companies_router, prefix="/api/v1", dependencies=[Depends(require_access)])
 
 # Set up CORS
 app.add_middleware(

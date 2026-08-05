@@ -7,7 +7,7 @@ from app.db.session import SessionLocal
 from app.models import ImportJob, ImportStatus, ParserRun
 from app.parser.deterministic import ExcelDeterministicParser
 from app.storage.minio_client import MinioClient
-from app.utils import extract_company_from_filename
+from app.services.company_resolver import resolve_company
 from datetime import datetime
 
 minio_client = MinioClient()
@@ -70,15 +70,24 @@ def process_job(db: Session, job: ImportJob):
             # Link snapshot to parser run
             parser_run.snapshot_id = snapshot.id
 
-            # The filename ("Empregados - <empresa> - Ativos.xls") is a far more
-            # reliable source for the company than sniffing spreadsheet cells,
-            # which varies by template (e.g. no title row above the header).
-            incoming_company = extract_company_from_filename(job.filename_metadata)
-            if not incoming_company and result.records:
-                incoming_company = result.records[0].get("company") or None
+            # The company is resolved once, at import level (see
+            # app/services/company_resolver.py): the CNPJ or name in the
+            # filename first, then the spreadsheet title row when the template
+            # has one. It is normally already set at upload time; resolving
+            # again here covers reprocessed and backfilled jobs.
+            if not job.company_id:
+                sheet_title = result.records[0].get("company") if result.records else None
+                company = resolve_company(db, job.filename_metadata, sheet_title=sheet_title)
+                if company:
+                    job.company_id = company.id
+                    job.company_name_raw = company.name
 
+            # Records still carry the name in raw_data for traceability, but
+            # reads resolve the company through the import (see
+            # app/services/consolidation.py) rather than trusting this copy.
+            company_name = job.company.name if job.company else None
             for row in result.records:
-                row["company"] = incoming_company
+                row["company"] = company_name
 
             # Each snapshot only holds the records from its own file. Other
             # companies' current employees are pulled in at read time (see
@@ -95,12 +104,7 @@ def process_job(db: Session, job: ImportJob):
                     name=str(row.get('name', 'N/A')),
                     job_title=str(row.get('job_title', 'N/A')),
                     category=str(row.get('category', 'N/A')),
-                    monthly_hours=row.get('monthly_hours'),
-                    children_count=row.get('children_count'),
-                    dependents_count=row.get('dependents_count'),
                     admission_date=row.get('admission_date'),
-                    fgts_option=row.get('fgts_option'),
-                    union_contribution=row.get('union_contribution'),
                     salary=row.get('salary'),
                     raw_data={k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in row.items()}
                 )
@@ -133,7 +137,11 @@ def process_job(db: Session, job: ImportJob):
 def run_worker():
     from app.models import Base
     from app.db.session import engine
+    from app.db.bootstrap import ensure_schema
     Base.metadata.create_all(bind=engine)
+    # The worker may boot before the API — patch the schema here too so it
+    # never writes against a table missing the company columns.
+    ensure_schema(engine)
     print("Worker started. Waiting for jobs...")
     while True:
         db = SessionLocal()

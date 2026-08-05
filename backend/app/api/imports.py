@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models import ImportJob, ImportStatus
+from app.models import Company, ImportJob, ImportStatus
+from app.services.company_resolver import get_or_create_company, resolve_company
 from app.storage.minio_client import MinioClient
 import hashlib
 import uuid
@@ -9,8 +12,19 @@ import uuid
 router = APIRouter(prefix="/imports", tags=["Imports"])
 minio_client = MinioClient()
 
+
+class CompanyAssignment(BaseModel):
+    company_id: Optional[int] = None
+    company_name: Optional[str] = None
+
+
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
-async def upload_import_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_import_file(
+    file: UploadFile = File(...),
+    company_id: Optional[int] = Form(None),
+    company_name: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     if not file.filename.endswith('.xls'):
         raise HTTPException(status_code=400, detail="Somente arquivos .xls são suportados atualmente.")
     
@@ -38,19 +52,34 @@ async def upload_import_file(file: UploadFile = File(...), db: Session = Depends
     if not success:
         raise HTTPException(status_code=500, detail="Erro ao salvar o arquivo no armazenamento.")
         
+    # An explicitly chosen company always wins; otherwise the CNPJ/name in the
+    # filename identifies it, creating the company on first sight.
+    if not company_id and company_name and company_name.strip():
+        created = get_or_create_company(db, name=company_name.strip())
+        company_id = created.id if created else None
+
+    company = resolve_company(db, file.filename, explicit_company_id=company_id)
+
     new_import = ImportJob(
         filename_metadata=file.filename,
         minio_object_key=object_key,
         file_hash=file_hash,
         file_size=file_size,
+        company_id=company.id if company else None,
+        company_name_raw=company.name if company else None,
         status=ImportStatus.QUEUED
     )
-    
+
     db.add(new_import)
     db.commit()
     db.refresh(new_import)
     
-    return {"message": "Importação enfileirada com sucesso.", "import_id": new_import.id, "status": new_import.status}
+    return {
+        "message": "Importação enfileirada com sucesso.",
+        "import_id": new_import.id,
+        "status": new_import.status,
+        "company": company.name if company else None,
+    }
 
 @router.get("/")
 async def list_imports(db: Session = Depends(get_db)):
@@ -62,7 +91,9 @@ async def list_imports(db: Session = Depends(get_db)):
         records = 0
         if job.snapshots:
             from app.models import EmployeeRecord
-            records = db.query(EmployeeRecord).filter(EmployeeRecord.snapshot_id == job.snapshots[0].id).count()
+            # A reprocessed job has several snapshots — the newest is the live one.
+            snapshot = max(job.snapshots, key=lambda s: s.id)
+            records = db.query(EmployeeRecord).filter(EmployeeRecord.snapshot_id == snapshot.id).count()
 
         error_message = None
         if job.parser_runs:
@@ -75,9 +106,38 @@ async def list_imports(db: Session = Depends(get_db)):
             "status": job.status.value if hasattr(job.status, 'value') else job.status,
             "date": job.uploaded_at.strftime("%d/%m/%Y %H:%M") if job.uploaded_at else "",
             "records": records,
+            "company": job.company.name if job.company else None,
+            "company_id": job.company_id,
             "error_message": error_message
         })
     return result
+
+
+@router.patch("/{import_id}/company")
+async def assign_import_company(
+    import_id: int, payload: CompanyAssignment, db: Session = Depends(get_db)
+):
+    """Attach (or correct) the company of an existing import — the escape hatch
+    for files whose name carries neither a CNPJ nor a recognizable name."""
+    job = db.query(ImportJob).filter(ImportJob.id == import_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Importação não encontrada.")
+
+    company = None
+    if payload.company_id:
+        company = db.get(Company, payload.company_id)
+        if not company:
+            raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    elif payload.company_name and payload.company_name.strip():
+        company = get_or_create_company(db, name=payload.company_name.strip())
+
+    if not company:
+        raise HTTPException(status_code=400, detail="Informe a empresa.")
+
+    job.company_id = company.id
+    db.commit()
+
+    return {"import_id": job.id, "company": company.name, "company_id": company.id}
 
 @router.post("/{import_id}/retry")
 async def retry_import(import_id: int, db: Session = Depends(get_db)):

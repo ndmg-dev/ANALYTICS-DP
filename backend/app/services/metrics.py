@@ -4,6 +4,16 @@ from sqlalchemy import select
 from app.models import EmployeeRecord, MetricResult, Snapshot
 from datetime import datetime
 
+def _unpack(records):
+    """Accept either bare EmployeeRecords (single-snapshot computation) or the
+    (record, company) pairs produced by app/services/consolidation.py."""
+    for item in records:
+        if isinstance(item, tuple):
+            yield item[0], item[1]
+        else:
+            yield item, None
+
+
 class MetricsEngine:
     def __init__(self, db: Session):
         self.db = db
@@ -48,15 +58,10 @@ class MetricsEngine:
                 "code": r.code,
                 "job_title": r.job_title,
                 "category": r.category,
-                "monthly_hours": r.monthly_hours,
-                "children_count": r.children_count,
-                "dependents_count": r.dependents_count,
                 "admission_date": r.admission_date,
-                "fgts_option": r.fgts_option,
-                "union_contribution": r.union_contribution,
                 "salary": r.salary
             }
-            for r in records
+            for r, _company in _unpack(records)
         ]
         df = pd.DataFrame(data)
 
@@ -69,30 +74,7 @@ class MetricsEngine:
         active_headcount = len(df)
         metrics_to_save.append(("active_headcount", float(active_headcount)))
 
-        # 2. Average/Median Monthly Hours
-        if not df["monthly_hours"].isnull().all():
-            metrics_to_save.append(("avg_monthly_hours", float(df["monthly_hours"].mean())))
-            metrics_to_save.append(("median_monthly_hours", float(df["monthly_hours"].median())))
-
-        # 3. Children and Dependents
-        if not df["children_count"].isnull().all():
-            metrics_to_save.append(("total_children", float(df["children_count"].sum())))
-            metrics_to_save.append(("avg_children", float(df["children_count"].mean())))
-
-        if not df["dependents_count"].isnull().all():
-            metrics_to_save.append(("total_dependents", float(df["dependents_count"].sum())))
-            metrics_to_save.append(("avg_dependents", float(df["dependents_count"].mean())))
-
-        # 4. FGTS and Union Rates
-        if not df["fgts_option"].isnull().all():
-            fgts_rate = df["fgts_option"].sum() / df["fgts_option"].count()
-            metrics_to_save.append(("fgts_option_rate", float(fgts_rate)))
-
-        if not df["union_contribution"].isnull().all():
-            union_rate = df["union_contribution"].sum() / df["union_contribution"].count()
-            metrics_to_save.append(("union_contribution_rate", float(union_rate)))
-
-        # 5. Tenure (in days)
+        # 2. Tenure (in days)
         valid_dates = df.dropna(subset=["admission_date"])
         if not valid_dates.empty:
             ref_date = pd.to_datetime(reference_date)
@@ -103,7 +85,7 @@ class MetricsEngine:
             metrics_to_save.append(("avg_tenure_days", float(tenure_days.mean())))
             metrics_to_save.append(("median_tenure_days", float(tenure_days.median())))
 
-        # 6. Salary (Only if authorized and supported, will just compute raw if present)
+        # 3. Salary (Only if authorized and supported, will just compute raw if present)
         df["salary"] = pd.to_numeric(df["salary"], errors="coerce")
         if not df["salary"].isnull().all():
             metrics_to_save.append(("total_payroll", float(df["salary"].sum())))
@@ -128,15 +110,18 @@ class MetricsEngine:
         ref_date = pd.to_datetime(reference_date)
 
         data = []
-        for r in records:
+        company_ids = {}
+        for r, company in _unpack(records):
+            company_name = company.name if company else "Não identificada"
+            if company:
+                company_ids[company_name] = company.id
             data.append({
                 "name": r.name,
                 "job_title": r.job_title,
                 "category": r.category,
-                "monthly_hours": r.monthly_hours,
                 "admission_date": r.admission_date,
                 "salary": r.salary,
-                "company": (r.raw_data or {}).get("company", "Mendonça Galvão Contadores Associados")
+                "company": company_name
             })
         df = pd.DataFrame(data)
         
@@ -157,6 +142,10 @@ class MetricsEngine:
 
         job_titles_dist = get_rich_dist("job_title")
         company_dist = get_rich_dist("company")
+        # Carry the company id so the UI can filter by it instead of by a
+        # display name that may be renamed later.
+        for name, bucket in company_dist.items():
+            bucket["company_id"] = company_ids.get(name)
 
         # Tenure Distribution
         tenure_dist = {
