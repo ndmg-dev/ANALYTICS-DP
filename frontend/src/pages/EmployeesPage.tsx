@@ -3,10 +3,38 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, withQuery } from '../lib/api';
 import { CompanySelect } from '../components/CompanySelect';
 import { useCompanies } from '../lib/useCompanies';
-import { Users, FileUser, Edit2, X, Download } from 'lucide-react';
+import { Users, FileUser, Edit2, X, Download, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+
+type SortKey = 'code' | 'name' | 'job_title' | 'category' | 'company' | 'admission_date' | 'salary';
+type SortDirection = 'asc' | 'desc';
+
+const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: 'code', label: 'Código' },
+  { key: 'name', label: 'Nome' },
+  { key: 'job_title', label: 'Cargo' },
+  { key: 'category', label: 'Categoria' },
+  { key: 'company', label: 'Empresa' },
+  { key: 'admission_date', label: 'Admissão' },
+  { key: 'salary', label: 'Salário' },
+];
+
+/** Sort value for a column: dates and salary compare numerically, everything
+ *  else as text. Returns null for missing values so they can be pushed to the
+ *  bottom regardless of direction — a blank admission date sorting "earliest"
+ *  would otherwise bury the real data. */
+const sortValue = (emp: any, key: SortKey): string | number | null => {
+  const raw = emp[key];
+  if (raw === null || raw === undefined || raw === '' || raw === 'N/A') return null;
+  if (key === 'salary') return typeof raw === 'number' ? raw : null;
+  if (key === 'admission_date') {
+    const time = new Date(raw).getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+  return String(raw);
+};
 
 export function EmployeesPage() {
   const queryClient = useQueryClient();
@@ -17,6 +45,8 @@ export function EmployeesPage() {
   // the company registry rather than from whatever rows happen to be loaded.
   const [filterCompanyId, setFilterCompanyId] = useState<number | null>(null);
   const [filterDate, setFilterDate] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const { data: companies = [] } = useCompanies();
 
   const { data: latestSnapshot, isLoading: isLoadingSnapshot } = useQuery({
@@ -41,6 +71,32 @@ export function EmployeesPage() {
     return match;
   });
 
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      // Third click on the same column clears the sort and restores the
+      // order the API returned.
+      if (sortDirection === 'asc') setSortDirection('desc');
+      else { setSortKey(null); setSortDirection('asc'); }
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedEmployees = sortKey
+    ? [...filteredEmployees].sort((a: any, b: any) => {
+        const va = sortValue(a, sortKey);
+        const vb = sortValue(b, sortKey);
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;   // blanks always last
+        if (vb === null) return -1;
+        const cmp = typeof va === 'number' && typeof vb === 'number'
+          ? va - vb
+          : String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base', numeric: true });
+        return sortDirection === 'asc' ? cmp : -cmp;
+      })
+    : filteredEmployees;
+
   const updateNote = useMutation({
     mutationFn: (data: { company: string, company_id: number, code: string, notes: string }) => api.put('/employees/notes', data),
     onSuccess: () => {
@@ -64,7 +120,7 @@ export function EmployeesPage() {
   };
 
   const handleExportExcel = async () => {
-    if (filteredEmployees.length === 0) {
+    if (sortedEmployees.length === 0) {
       toast.error('Nenhum dado para exportar.');
       return;
     }
@@ -98,7 +154,8 @@ export function EmployeesPage() {
     });
     headerRow.height = 30;
 
-    filteredEmployees.forEach((emp: any) => {
+    // Export follows what's on screen, sorting included.
+    sortedEmployees.forEach((emp: any) => {
       worksheet.addRow({
         code: `#${emp.code}`,
         name: emp.name,
@@ -165,7 +222,7 @@ export function EmployeesPage() {
             Quadro de Funcionários
           </h3>
           <div className="px-3 py-1 bg-white/5 rounded-lg text-sm text-text-muted">
-            Total: {filteredEmployees.length}
+            Total: {sortedEmployees.length}
           </div>
         </div>
         
@@ -174,24 +231,36 @@ export function EmployeesPage() {
             <div className="p-8 text-center text-text-muted">Carregando colaboradores...</div>
           ) : !snapshotId ? (
             <div className="p-8 text-center text-text-muted">Nenhum dado disponível. Realize uma importação.</div>
-          ) : filteredEmployees.length === 0 ? (
+          ) : sortedEmployees.length === 0 ? (
             <div className="p-8 text-center text-text-muted">Nenhum colaborador encontrado neste snapshot.</div>
           ) : (
             <table className="w-full text-left text-sm">
               <thead className="bg-white/5 text-text-muted">
                 <tr>
-                  <th className="px-6 py-3 font-medium">Código</th>
-                  <th className="px-6 py-3 font-medium">Nome</th>
-                  <th className="px-6 py-3 font-medium">Cargo</th>
-                  <th className="px-6 py-3 font-medium">Categoria</th>
-                  <th className="px-6 py-3 font-medium">Empresa</th>
-                  <th className="px-6 py-3 font-medium">Admissão</th>
-                  <th className="px-6 py-3 font-medium">Salário</th>
+                  {COLUMNS.map(({ key, label }) => {
+                    const isActive = sortKey === key;
+                    return (
+                      <th key={key} className="px-6 py-3 font-medium">
+                        <button
+                          onClick={() => toggleSort(key)}
+                          className={`flex items-center gap-1.5 transition-colors hover:text-text-primary ${isActive ? 'text-gold' : ''}`}
+                          title={`Ordenar por ${label}`}
+                        >
+                          {label}
+                          {!isActive
+                            ? <ChevronsUpDown size={13} className="opacity-30" />
+                            : sortDirection === 'asc'
+                              ? <ChevronUp size={13} />
+                              : <ChevronDown size={13} />}
+                        </button>
+                      </th>
+                    );
+                  })}
                   <th className="px-6 py-3 font-medium">Observações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredEmployees.map((emp: any) => (
+                {sortedEmployees.map((emp: any) => (
                   <tr key={emp.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-6 py-4 text-text-muted">#{emp.code}</td>
                     <td className="px-6 py-4 font-medium text-text-primary flex items-center gap-2">
