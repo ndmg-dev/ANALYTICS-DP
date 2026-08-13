@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { Users, Clock, Briefcase, Activity, AlertCircle, X } from 'lucide-react';
+import { Users, Clock, Briefcase, Activity, AlertCircle, X, PiggyBank } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api, withQuery } from '../lib/api';
 import { CompanySelect } from '../components/CompanySelect';
@@ -65,6 +65,8 @@ export function DashboardPage() {
     active_headcount: m.active_headcount || 0,
     avg_tenure_days: Math.round(m.avg_tenure_days || 0),
     total_payroll: m.total_payroll,
+    provisions_total: m.provisions_total,
+    total_cost: m.total_cost,
     quality_score: 95
   };
 
@@ -198,7 +200,7 @@ export function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <div className="glass-card p-5 group border-t-2 border-t-gold/50">
           <div className="flex justify-between items-start mb-2">
             <div>
@@ -236,6 +238,19 @@ export function DashboardPage() {
             </div>
           </div>
           <p className="text-xs text-text-muted mt-2">Soma do salário base (vencimentos) mapeados no arquivo.</p>
+        </div>
+
+        <div className="glass-card p-5 group border-t-2 border-t-gold/50">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <p className="text-text-muted text-sm font-medium">Provisões Mensais</p>
+              <h3 className="text-2xl font-bold mt-2 text-text-primary">{hasSalaryData ? formatBRL(metrics.provisions_total) : 'N/D'}</h3>
+            </div>
+            <div className="p-2 bg-white/5 rounded-lg text-gold group-hover:bg-gold/10 transition-colors">
+              <PiggyBank size={24} />
+            </div>
+          </div>
+          <p className="text-xs text-text-muted mt-2">Férias, 1/3 e 13º com FGTS e INSS sobre as provisões. Custo total da folha: {hasSalaryData ? formatBRL(metrics.total_cost) : 'N/D'}.</p>
         </div>
 
         <div className="glass-card p-5 group border-t-2 border-t-success/50">

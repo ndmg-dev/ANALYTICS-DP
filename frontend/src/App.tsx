@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ImportsPage } from './pages/ImportsPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { QualityPage } from './pages/QualityPage';
+import { PersonnelCostPage } from './pages/PersonnelCostPage';
 import { LoginGate } from './components/LoginGate';
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ function App() {
               <Route path="imports" element={<ImportsPage />} />
               <Route path="quality" element={<QualityPage />} />
               <Route path="employees" element={<EmployeesPage />} />
+              <Route path="personnel-cost" element={<PersonnelCostPage />} />
 
             </Route>
           </Routes>

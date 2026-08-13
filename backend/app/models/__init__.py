@@ -34,6 +34,10 @@ class Company(Base):
     id = Column(Integer, primary_key=True, index=True)
     cnpj = Column(String(14), unique=True, index=True, nullable=True)
     name = Column(String, unique=True, nullable=False)
+    # "NORMAL" or "SIMPLES_NACIONAL" — see app/services/provisions.py.
+    # Defaults to Regime Normal, the costlier assumption, so a company nobody
+    # has configured yet is never reported as cheaper than it is.
+    tax_regime = Column(String, nullable=False, default="NORMAL", server_default="NORMAL")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     imports = relationship("ImportJob", back_populates="company")

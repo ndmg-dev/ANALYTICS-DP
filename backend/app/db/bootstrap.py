@@ -19,6 +19,7 @@ _DDL = [
     "ALTER TABLE imports ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id)",
     "ALTER TABLE imports ADD COLUMN IF NOT EXISTS company_name_raw VARCHAR",
     "CREATE INDEX IF NOT EXISTS ix_imports_company_id ON imports (company_id)",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS tax_regime VARCHAR NOT NULL DEFAULT 'NORMAL'",
     "ALTER TABLE employee_notes ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id)",
     "CREATE INDEX IF NOT EXISTS ix_employee_notes_company_id ON employee_notes (company_id)",
 ]

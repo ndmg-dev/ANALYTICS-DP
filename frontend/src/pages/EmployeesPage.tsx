@@ -8,10 +8,12 @@ import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
-type SortKey = 'code' | 'name' | 'job_title' | 'category' | 'company' | 'admission_date' | 'salary';
+type SortKey = 'code' | 'name' | 'job_title' | 'category' | 'company' | 'admission_date'
+  | 'salary' | 'provision_vacation' | 'provision_vacation_bonus' | 'provision_thirteenth'
+  | 'provision_fgts' | 'provision_social_security' | 'provisions_total';
 type SortDirection = 'asc' | 'desc';
 
-const COLUMNS: { key: SortKey; label: string }[] = [
+const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: 'code', label: 'Código' },
   { key: 'name', label: 'Nome' },
   { key: 'job_title', label: 'Cargo' },
@@ -19,7 +21,23 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'company', label: 'Empresa' },
   { key: 'admission_date', label: 'Admissão' },
   { key: 'salary', label: 'Salário' },
+  { key: 'provision_vacation', label: 'Férias 1/12', title: 'Provisão mensal de férias: 1/12 do salário (8,333%)' },
+  { key: 'provision_vacation_bonus', label: '1/3 Férias', title: 'Provisão mensal do terço constitucional: 1/36 do salário (2,778%)' },
+  { key: 'provision_thirteenth', label: '13º 1/12', title: 'Provisão mensal de 13º salário: 1/12 do salário (8,333%)' },
+  { key: 'provision_fgts', label: 'FGTS s/ Prov.', title: 'FGTS 8% sobre férias, 1/3 e 13º (1,556% do salário)' },
+  { key: 'provision_social_security', label: 'INSS s/ Prov.', title: 'INSS, RAT e Terceiros 28,8% sobre as provisões (5,6% do salário). Zero no Simples Nacional.' },
+  { key: 'provisions_total', label: 'Total Provisões', title: 'Simples Nacional: 21% do salário. Regime Normal: 26,6%.' },
 ];
+
+const PROVISION_KEYS: SortKey[] = [
+  'provision_vacation', 'provision_vacation_bonus', 'provision_thirteenth',
+  'provision_fgts', 'provision_social_security', 'provisions_total'
+];
+
+const formatBRL = (value: any) =>
+  typeof value === 'number'
+    ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    : '-';
 
 /** Sort value for a column: dates and salary compare numerically, everything
  *  else as text. Returns null for missing values so they can be pushed to the
@@ -28,7 +46,7 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 const sortValue = (emp: any, key: SortKey): string | number | null => {
   const raw = emp[key];
   if (raw === null || raw === undefined || raw === '' || raw === 'N/A') return null;
-  if (key === 'salary') return typeof raw === 'number' ? raw : null;
+  if (key === 'salary' || PROVISION_KEYS.includes(key)) return typeof raw === 'number' ? raw : null;
   if (key === 'admission_date') {
     const time = new Date(raw).getTime();
     return Number.isNaN(time) ? null : time;
@@ -134,8 +152,15 @@ export function EmployeesPage() {
       { header: 'Cargo', key: 'job_title', width: 30 },
       { header: 'Categoria', key: 'category', width: 15 },
       { header: 'Empresa', key: 'company', width: 45 },
+      { header: 'Regime', key: 'tax_regime', width: 18 },
       { header: 'Admissão', key: 'admission_date', width: 15 },
       { header: 'Salário', key: 'salary', width: 18 },
+      { header: 'Férias 1/12', key: 'provision_vacation', width: 16 },
+      { header: '1/3 Férias 1/12', key: 'provision_vacation_bonus', width: 16 },
+      { header: '13º 1/12', key: 'provision_thirteenth', width: 16 },
+      { header: 'FGTS s/ Provisões', key: 'provision_fgts', width: 18 },
+      { header: 'INSS s/ Provisões', key: 'provision_social_security', width: 18 },
+      { header: 'Total Provisões', key: 'provisions_total', width: 18 },
       { header: 'Observações', key: 'notes', width: 50 },
     ];
 
@@ -162,11 +187,24 @@ export function EmployeesPage() {
         job_title: emp.job_title,
         category: emp.category || '-',
         company: emp.company || '-',
+        tax_regime: emp.tax_regime_label || '-',
         admission_date: emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-',
-        salary: typeof emp.salary === 'number' ? emp.salary.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-',
+        // Money goes out as numbers with a currency format, not as text, so
+        // the exported sheet can be summed and sorted in Excel.
+        salary: emp.salary ?? null,
+        provision_vacation: emp.provision_vacation ?? null,
+        provision_vacation_bonus: emp.provision_vacation_bonus ?? null,
+        provision_thirteenth: emp.provision_thirteenth ?? null,
+        provision_fgts: emp.provision_fgts ?? null,
+        provision_social_security: emp.provision_social_security ?? null,
+        provisions_total: emp.provisions_total ?? null,
         notes: emp.notes || '-'
       });
     });
+
+    ['salary', 'provision_vacation', 'provision_vacation_bonus', 'provision_thirteenth',
+     'provision_fgts', 'provision_social_security', 'provisions_total']
+      .forEach(key => { worksheet.getColumn(key).numFmt = 'R$ #,##0.00'; });
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -237,14 +275,14 @@ export function EmployeesPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-white/5 text-text-muted">
                 <tr>
-                  {COLUMNS.map(({ key, label }) => {
+                  {COLUMNS.map(({ key, label, title }) => {
                     const isActive = sortKey === key;
                     return (
-                      <th key={key} className="px-6 py-3 font-medium">
+                      <th key={key} className="px-6 py-3 font-medium whitespace-nowrap">
                         <button
                           onClick={() => toggleSort(key)}
                           className={`flex items-center gap-1.5 transition-colors hover:text-text-primary ${isActive ? 'text-gold' : ''}`}
-                          title={`Ordenar por ${label}`}
+                          title={title ?? `Ordenar por ${label}`}
                         >
                           {label}
                           {!isActive
@@ -279,7 +317,13 @@ export function EmployeesPage() {
                       <span className="truncate block max-w-[150px]" title={emp.company}>{emp.company || '-'}</span>
                     </td>
                     <td className="px-6 py-4 text-text-muted">{emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-'}</td>
-                    <td className="px-6 py-4 text-text-muted">{typeof emp.salary === 'number' ? emp.salary.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.salary)}</td>
+                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_vacation)}</td>
+                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_vacation_bonus)}</td>
+                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_thirteenth)}</td>
+                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_fgts)}</td>
+                    <td className="px-6 py-4 text-text-muted whitespace-nowrap" title={emp.tax_regime_label}>{formatBRL(emp.provision_social_security)}</td>
+                    <td className="px-6 py-4 text-gold whitespace-nowrap">{formatBRL(emp.provisions_total)}</td>
                     <td className="px-6 py-4 text-text-muted">
                       <div className="flex items-center gap-3">
                         <span className="truncate block max-w-[100px]" title={emp.notes}>{emp.notes || '-'}</span>

@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, UploadCloud, FileCheck, Users } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, FileCheck, Users, Calculator } from 'lucide-react';
 
 export function MainLayout() {
   return (
@@ -29,6 +29,10 @@ export function MainLayout() {
           <NavLink to="/employees" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
             <Users size={20} />
             <span>Colaboradores</span>
+          </NavLink>
+          <NavLink to="/personnel-cost" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Calculator size={20} />
+            <span>Custo de Pessoal</span>
           </NavLink>
         </nav>
         

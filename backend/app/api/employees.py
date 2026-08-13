@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.db.session import get_db
 from app.models import Company, Snapshot, EmployeeNote
 from app.services.consolidation import get_consolidated_employee_records
+from app.services.provisions import DEFAULT_REGIME, REGIME_LABELS, compute_provisions
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
 
@@ -38,6 +39,8 @@ async def list_employees(
 
     result = []
     for emp, company in employees:
+        regime = company.tax_regime or DEFAULT_REGIME
+        provisions = compute_provisions(emp.salary, regime)
         result.append({
             "id": emp.id,
             "code": emp.code,
@@ -45,9 +48,17 @@ async def list_employees(
             "job_title": emp.job_title,
             "company": company.name,
             "company_id": company.id,
+            "tax_regime": regime,
+            "tax_regime_label": REGIME_LABELS.get(regime, regime),
             "category": emp.category,
             "admission_date": emp.admission_date,
             "salary": emp.salary,
+            "provision_vacation": provisions["vacation"],
+            "provision_vacation_bonus": provisions["vacation_bonus"],
+            "provision_thirteenth": provisions["thirteenth"],
+            "provision_fgts": provisions["fgts"],
+            "provision_social_security": provisions["social_security"],
+            "provisions_total": provisions["total"],
             "notes": notes_by_id.get((company.id, emp.code))
                      or notes_by_name.get((company.name, emp.code), ""),
             "status": "Ativo"
