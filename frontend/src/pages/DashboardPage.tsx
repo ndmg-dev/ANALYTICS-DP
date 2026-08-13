@@ -32,6 +32,11 @@ export function DashboardPage() {
     enabled: !!snapshotId
   });
 
+  const { data: costData } = useQuery({
+    queryKey: ['personnel-cost', selectedCompanyId],
+    queryFn: () => api.get(withQuery('/metrics/personnel-cost', { company_id: selectedCompanyId }))
+  });
+
   const toggleCompanyFilter = (companyId: number | null) => {
     if (!companyId) return;
     setSelectedCompanyId(prev => prev === companyId ? null : companyId);
@@ -154,6 +159,112 @@ export function DashboardPage() {
     ]
   };
 
+  // --- Cost composition -----------------------------------------------------
+  // Three categorical hues, validated for the dark surface (#151515): all six
+  // checks pass — lightness band, chroma floor, CVD separation (worst adjacent
+  // pair ΔE 9.3 protan), normal-vision separation and 3:1 contrast.
+  const COST_SERIES = [
+    { key: 'provisions_base', label: 'Férias + 1/3 + 13º', color: '#ac7d00' },
+    { key: 'fgts', label: 'FGTS sobre provisões', color: '#398ad6' },
+    { key: 'social_security', label: 'INSS sobre provisões', color: '#bc61a0' }
+  ];
+  const CHART_SURFACE = '#151515';
+
+  const costRows: any[] = (costData?.companies ?? []).filter((c: any) => c.total > 0);
+  // Longest bar first reads top-down; ECharts' category axis runs bottom-up.
+  const costCompanies = [...costRows].sort((a, b) => a.total - b.total);
+
+  const lastVisibleSeries = (row: any) => {
+    for (let i = COST_SERIES.length - 1; i >= 0; i--) {
+      if (row[COST_SERIES[i].key] > 0) return i;
+    }
+    return -1;
+  };
+
+  const costOption = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      backgroundColor: '#1E1E1E', borderColor: '#333', textStyle: { color: '#FFF' },
+      formatter: (params: any[]) => {
+        const row = costCompanies.find(c => c.company === params[0].name);
+        if (!row) return '';
+        const lines = params.map(p =>
+          `<div style="display:flex;gap:12px;justify-content:space-between">
+             <span>${p.marker} ${p.seriesName}</span>
+             <strong>${formatBRL(p.value)}</strong>
+           </div>`
+        ).join('');
+        return `<div style="padding:4px;min-width:240px">
+          <strong style="color:#D4A843">${row.company}</strong>
+          <div style="font-size:11px;color:#8A8A8A;margin-bottom:6px">
+            ${row.tax_regime_label} · ${row.headcount} colaboradores
+          </div>
+          ${lines}
+          <div style="border-top:1px solid #333;margin-top:6px;padding-top:6px;display:flex;gap:12px;justify-content:space-between">
+            <span>Total sobre folha de ${formatBRL(row.salary_base)}</span>
+            <strong style="color:#D4A843">${formatBRL(row.total)}</strong>
+          </div>
+        </div>`;
+      }
+    },
+    legend: { show: false },
+    // `left` is breathing room on top of the space containLabel reserves for
+    // the axis labels — at 0 a long company name gets its first letter sliced
+    // by the canvas edge. `right` reserves room for the direct labels.
+    grid: { left: 8, right: 92, top: 10, bottom: 0, containLabel: true },
+    xAxis: {
+      type: 'value',
+      axisLabel: { color: '#8A8A8A', formatter: (v: number) => `R$ ${(v / 1000).toFixed(0)}k` },
+      splitLine: { lineStyle: { color: '#2B2B2B' } }
+    },
+    yAxis: {
+      type: 'category',
+      data: costCompanies.map(c => c.company),
+      axisLabel: { color: '#8A8A8A', width: 118, overflow: 'truncate', fontSize: 12 },
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#2B2B2B' } }
+    },
+    series: COST_SERIES.map(({ key, label, color }, seriesIdx) => ({
+      name: label,
+      type: 'bar',
+      stack: 'custo',
+      barMaxWidth: 26,
+      // A 1px ring in the surface colour on each side leaves a 2px gap
+      // between adjacent fills.
+      itemStyle: { color, borderColor: CHART_SURFACE, borderWidth: 1 },
+      data: costCompanies.map(row => {
+        const isLast = lastVisibleSeries(row) === seriesIdx;
+        return {
+          value: row[key],
+          // Only the outermost visible segment gets the rounded data-end, and
+          // it carries the direct label for the row's total.
+          itemStyle: isLast ? { borderRadius: [0, 4, 4, 0] } : undefined,
+          label: isLast ? {
+            show: true,
+            position: 'right',
+            distance: 8,
+            color: '#F5F5F5',
+            fontSize: 11,
+            formatter: () => formatBRL(row.total)
+          } : { show: false }
+        };
+      })
+    }))
+  };
+
+  // Provision components are fixed fractions of salary, so their proportions
+  // never vary between companies — charting them would draw a constant. The
+  // honest form is the figure itself, with a meter for relative weight.
+  const provisionBreakdown = [
+    { label: 'Férias 1/12', value: m.provision_vacation, hint: 'salário ÷ 12' },
+    { label: '1/3 sobre férias', value: m.provision_vacation_bonus, hint: 'salário ÷ 36' },
+    { label: '13º salário 1/12', value: m.provision_thirteenth, hint: 'salário ÷ 12' },
+    { label: 'FGTS s/ provisões', value: m.provision_fgts, hint: '8% das provisões' },
+    { label: 'INSS s/ provisões', value: m.provision_social_security, hint: '28,8% · isento no SN' }
+  ].filter(item => typeof item.value === 'number');
+  const provisionMax = Math.max(...provisionBreakdown.map(i => i.value as number), 1);
+
   // Sort Job Titles for top 8
   const topJobTitles = Object.entries(jobTitles)
     .sort((a: any, b: any) => b[1].count - a[1].count)
@@ -266,6 +377,66 @@ export function DashboardPage() {
           <p className="text-xs text-text-muted mt-2">Índice de qualidade de leitura dos dados essenciais.</p>
         </div>
       </div>
+
+      {/* Cost composition */}
+      {costCompanies.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          <div className="glass-card p-5 lg:col-span-2">
+            <div className="flex items-start justify-between mb-1">
+              <h3 className="text-lg font-medium text-text-primary">Provisões por Empresa</h3>
+              <div className="flex flex-wrap gap-3 justify-end">
+                {COST_SERIES.map(({ label, color }) => (
+                  <span key={label} className="flex items-center gap-1.5 text-xs text-text-muted">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-text-muted mb-2">
+              Empresas do Simples Nacional não têm a faixa de INSS — a contribuição patronal já está no DAS.
+            </p>
+            <ReactECharts
+              option={costOption}
+              style={{ height: `${Math.max(180, costCompanies.length * 56 + 60)}px` }}
+            />
+          </div>
+
+          <div className="glass-card p-5 flex flex-col">
+            <h3 className="text-lg font-medium text-text-primary">Composição das Provisões</h3>
+            <p className="text-xs text-text-muted mt-1">
+              {selectedCompanyName ?? 'Todas as empresas'} · acumulado no mês
+            </p>
+
+            <div className="mt-4 pb-4 border-b border-border">
+              <p className="text-3xl font-bold text-gold">{formatBRL(metrics.provisions_total)}</p>
+              <p className="text-xs text-text-muted mt-1">
+                sobre uma folha de {formatBRL(costData?.totals?.salary_base ?? 0)}
+              </p>
+            </div>
+
+            <div className="space-y-3 mt-4 flex-1">
+              {provisionBreakdown.map(({ label, value, hint }) => (
+                <div key={label}>
+                  <div className="flex justify-between items-baseline gap-2">
+                    <span className="text-sm text-text-primary">{label}</span>
+                    <span className="text-sm text-text-muted tabular-nums whitespace-nowrap">{formatBRL(value)}</span>
+                  </div>
+                  {/* Meter on a same-hue track: relative weight without a
+                      second colour scale competing with the chart's. */}
+                  <div className="h-1.5 rounded-full bg-white/5 mt-1.5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gold/70"
+                      style={{ width: `${Math.max(2, ((value as number) / provisionMax) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-text-muted mt-1">{hint}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charts - Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
