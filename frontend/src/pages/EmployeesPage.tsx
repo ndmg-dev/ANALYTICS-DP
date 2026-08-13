@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, withQuery } from '../lib/api';
 import { CompanySelect } from '../components/CompanySelect';
 import { useCompanies } from '../lib/useCompanies';
-import { Users, FileUser, Edit2, X, Download, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Users, FileUser, Edit2, X, Download, ChevronUp, ChevronDown, ChevronsUpDown, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -13,21 +13,51 @@ type SortKey = 'code' | 'name' | 'job_title' | 'category' | 'company' | 'admissi
   | 'provision_fgts' | 'provision_social_security' | 'provisions_total';
 type SortDirection = 'asc' | 'desc';
 
-const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
+interface Column {
+  key: SortKey;
+  label: string;
+  title?: string;
+  /** Money columns are right-aligned and get tighter padding. */
+  numeric?: boolean;
+  /** Provision columns can be collapsed as a block. */
+  provision?: boolean;
+  /** Frozen while the table scrolls horizontally. */
+  frozen?: boolean;
+}
+
+const COLUMNS: Column[] = [
+  { key: 'name', label: 'Nome', frozen: true },
   { key: 'code', label: 'Código' },
-  { key: 'name', label: 'Nome' },
   { key: 'job_title', label: 'Cargo' },
   { key: 'category', label: 'Categoria' },
   { key: 'company', label: 'Empresa' },
   { key: 'admission_date', label: 'Admissão' },
-  { key: 'salary', label: 'Salário' },
-  { key: 'provision_vacation', label: 'Férias 1/12', title: 'Provisão mensal de férias: 1/12 do salário (8,333%)' },
-  { key: 'provision_vacation_bonus', label: '1/3 Férias', title: 'Provisão mensal do terço constitucional: 1/36 do salário (2,778%)' },
-  { key: 'provision_thirteenth', label: '13º 1/12', title: 'Provisão mensal de 13º salário: 1/12 do salário (8,333%)' },
-  { key: 'provision_fgts', label: 'FGTS s/ Prov.', title: 'FGTS 8% sobre férias, 1/3 e 13º (1,556% do salário)' },
-  { key: 'provision_social_security', label: 'INSS s/ Prov.', title: 'INSS, RAT e Terceiros 28,8% sobre as provisões (5,6% do salário). Zero no Simples Nacional.' },
-  { key: 'provisions_total', label: 'Total Provisões', title: 'Simples Nacional: 21% do salário. Regime Normal: 26,6%.' },
+  { key: 'salary', label: 'Salário', numeric: true },
+  { key: 'provision_vacation', label: 'Férias 1/12', numeric: true, provision: true, title: 'Provisão mensal de férias: 1/12 do salário (8,333%)' },
+  { key: 'provision_vacation_bonus', label: '1/3 Férias', numeric: true, provision: true, title: 'Provisão mensal do terço constitucional: 1/36 do salário (2,778%)' },
+  { key: 'provision_thirteenth', label: '13º 1/12', numeric: true, provision: true, title: 'Provisão mensal de 13º salário: 1/12 do salário (8,333%)' },
+  { key: 'provision_fgts', label: 'FGTS', numeric: true, provision: true, title: 'FGTS 8% sobre férias, 1/3 e 13º (1,556% do salário)' },
+  { key: 'provision_social_security', label: 'INSS', numeric: true, provision: true, title: 'INSS, RAT e Terceiros 28,8% sobre as provisões (5,6% do salário). Zero no Simples Nacional.' },
+  { key: 'provisions_total', label: 'Total', numeric: true, provision: true, title: 'Simples Nacional: 21% do salário. Regime Normal: 26,6%.' },
 ];
+
+const CELL_VALUE: Record<SortKey, (emp: any) => any> = {
+  name: emp => emp.name,
+  code: emp => `#${emp.code}`,
+  job_title: emp => emp.job_title,
+  category: emp => emp.category || '-',
+  company: emp => emp.company || '-',
+  admission_date: emp => emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-',
+  salary: emp => formatBRL(emp.salary),
+  provision_vacation: emp => formatBRL(emp.provision_vacation),
+  provision_vacation_bonus: emp => formatBRL(emp.provision_vacation_bonus),
+  provision_thirteenth: emp => formatBRL(emp.provision_thirteenth),
+  provision_fgts: emp => formatBRL(emp.provision_fgts),
+  provision_social_security: emp => formatBRL(emp.provision_social_security),
+  provisions_total: emp => formatBRL(emp.provisions_total),
+};
+
+const PROVISION_COLUMN_COUNT = COLUMNS.filter(c => c.provision).length;
 
 const PROVISION_KEYS: SortKey[] = [
   'provision_vacation', 'provision_vacation_bonus', 'provision_thirteenth',
@@ -65,6 +95,9 @@ export function EmployeesPage() {
   const [filterDate, setFilterDate] = useState('');
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  // Six provision columns is a lot of table. They can be folded away when the
+  // question at hand is about people rather than about cost.
+  const [showProvisions, setShowProvisions] = useState(true);
   const { data: companies = [] } = useCompanies();
 
   const { data: latestSnapshot, isLoading: isLoadingSnapshot } = useQuery({
@@ -88,6 +121,8 @@ export function EmployeesPage() {
     }
     return match;
   });
+
+  const visibleColumns = showProvisions ? COLUMNS : COLUMNS.filter(c => !c.provision);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -259,12 +294,26 @@ export function EmployeesPage() {
             <Users size={20} className="text-gold" />
             Quadro de Funcionários
           </h3>
-          <div className="px-3 py-1 bg-white/5 rounded-lg text-sm text-text-muted">
-            Total: {sortedEmployees.length}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowProvisions(v => !v)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                showProvisions
+                  ? 'bg-gold/10 border-gold/30 text-gold hover:bg-gold/20'
+                  : 'bg-white/5 border-border text-text-muted hover:bg-white/10'
+              }`}
+              title={showProvisions ? 'Ocultar as colunas de provisão' : 'Exibir as colunas de provisão'}
+            >
+              {showProvisions ? <EyeOff size={15} /> : <Eye size={15} />}
+              Provisões
+            </button>
+            <div className="px-3 py-1.5 bg-white/5 rounded-lg text-sm text-text-muted">
+              Total: {sortedEmployees.length}
+            </div>
           </div>
         </div>
         
-        <div className="overflow-x-auto">
+        <div className="table-scroll">
           {isLoadingSnapshot || isLoading ? (
             <div className="p-8 text-center text-text-muted">Carregando colaboradores...</div>
           ) : !snapshotId ? (
@@ -273,15 +322,30 @@ export function EmployeesPage() {
             <div className="p-8 text-center text-text-muted">Nenhum colaborador encontrado neste snapshot.</div>
           ) : (
             <table className="w-full text-left text-sm">
-              <thead className="bg-white/5 text-text-muted">
-                <tr>
-                  {COLUMNS.map(({ key, label, title }) => {
+              <thead className="text-text-muted">
+                {showProvisions && (
+                  /* Groups the six provision columns so the money block reads
+                     as one thing instead of six unrelated currency columns. */
+                  <tr className="bg-white/5 text-[11px] uppercase tracking-wider">
+                    <th className="col-frozen col-frozen-head" />
+                    <th colSpan={visibleColumns.length - PROVISION_COLUMN_COUNT - 1} />
+                    <th colSpan={PROVISION_COLUMN_COUNT} className="px-3 pt-3 text-center text-gold/70 border-b border-gold/20">
+                      Provisões Mensais
+                    </th>
+                    <th />
+                  </tr>
+                )}
+                <tr className="bg-white/5">
+                  {visibleColumns.map(({ key, label, title, numeric, frozen }) => {
                     const isActive = sortKey === key;
                     return (
-                      <th key={key} className="px-6 py-3 font-medium whitespace-nowrap">
+                      <th
+                        key={key}
+                        className={`${numeric ? 'px-3 text-right' : 'px-4'} py-3 font-medium whitespace-nowrap ${frozen ? 'col-frozen col-frozen-head' : ''}`}
+                      >
                         <button
                           onClick={() => toggleSort(key)}
-                          className={`flex items-center gap-1.5 transition-colors hover:text-text-primary ${isActive ? 'text-gold' : ''}`}
+                          className={`inline-flex items-center gap-1.5 align-middle transition-colors hover:text-text-primary ${isActive ? 'text-gold' : ''}`}
                           title={title ?? `Ordenar por ${label}`}
                         >
                           {label}
@@ -294,40 +358,42 @@ export function EmployeesPage() {
                       </th>
                     );
                   })}
-                  <th className="px-6 py-3 font-medium">Observações</th>
+                  <th className="px-4 py-3 font-medium">Observações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {sortedEmployees.map((emp: any) => (
-                  <tr key={emp.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-6 py-4 text-text-muted">#{emp.code}</td>
-                    <td className="px-6 py-4 font-medium text-text-primary flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-gold min-w-[32px]">
-                        <FileUser size={14} />
-                      </div>
-                      <span className="truncate max-w-[200px]" title={emp.name}>{emp.name}</span>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted">
-                      <span className="truncate block max-w-[150px]" title={emp.job_title}>{emp.job_title}</span>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted">
-                      <span className="px-2 py-1 bg-white/5 rounded text-xs whitespace-nowrap">{emp.category || '-'}</span>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted">
-                      <span className="truncate block max-w-[150px]" title={emp.company}>{emp.company || '-'}</span>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted">{emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : '-'}</td>
-                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.salary)}</td>
-                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_vacation)}</td>
-                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_vacation_bonus)}</td>
-                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_thirteenth)}</td>
-                    <td className="px-6 py-4 text-text-muted whitespace-nowrap">{formatBRL(emp.provision_fgts)}</td>
-                    <td className="px-6 py-4 text-text-muted whitespace-nowrap" title={emp.tax_regime_label}>{formatBRL(emp.provision_social_security)}</td>
-                    <td className="px-6 py-4 text-gold whitespace-nowrap">{formatBRL(emp.provisions_total)}</td>
-                    <td className="px-6 py-4 text-text-muted">
+                  <tr key={emp.id} className="group hover:bg-white/[0.02] transition-colors">
+                    {visibleColumns.map(({ key, numeric, frozen, provision }) => (
+                      <td
+                        key={key}
+                        className={`${numeric ? 'px-3 text-right whitespace-nowrap tabular-nums' : 'px-4'} py-3 ${frozen ? 'col-frozen' : ''} ${
+                          key === 'name' ? 'font-medium text-text-primary'
+                            : key === 'provisions_total' ? 'text-gold'
+                            : 'text-text-muted'
+                        }`}
+                        title={provision && key === 'provision_social_security' ? emp.tax_regime_label : undefined}
+                      >
+                        {key === 'name' ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-gold min-w-[32px]">
+                              <FileUser size={14} />
+                            </div>
+                            <span className="truncate max-w-[180px]" title={emp.name}>{emp.name}</span>
+                          </div>
+                        ) : key === 'category' ? (
+                          <span className="px-2 py-1 bg-white/5 rounded text-xs whitespace-nowrap">{emp.category || '-'}</span>
+                        ) : key === 'job_title' || key === 'company' ? (
+                          <span className="truncate block max-w-[150px]" title={emp[key]}>{emp[key] || '-'}</span>
+                        ) : (
+                          CELL_VALUE[key](emp)
+                        )}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-text-muted">
                       <div className="flex items-center gap-3">
                         <span className="truncate block max-w-[100px]" title={emp.notes}>{emp.notes || '-'}</span>
-                        <button 
+                        <button
                           onClick={() => {
                             setSelectedEmp(emp);
                             setNotes(emp.notes || '');

@@ -61,7 +61,7 @@ export function PersonnelCostPage() {
             <h3 className="text-lg font-medium text-text-primary">Composição das Provisões</h3>
             <p className="text-text-muted text-xs mt-1">Percentuais aplicados sobre o salário-base de cada colaborador.</p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table className="w-full text-left text-sm">
               <thead className="bg-white/5 text-text-muted">
                 <tr>
@@ -119,7 +119,7 @@ export function PersonnelCostPage() {
           <h3 className="text-lg font-medium text-text-primary">Provisões por Empresa</h3>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="table-scroll">
           {isLoading ? (
             <div className="p-8 text-center text-text-muted">Calculando provisões...</div>
           ) : companies.length === 0 ? (

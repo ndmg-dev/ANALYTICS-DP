@@ -181,7 +181,7 @@ export function ImportsPage() {
         <div className="p-5 border-b border-border">
           <h3 className="text-lg font-medium text-text-primary">Histórico de Importações</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="table-scroll">
           {isLoading ? (
             <div className="p-8 text-center text-text-muted">Carregando histórico...</div>
           ) : (

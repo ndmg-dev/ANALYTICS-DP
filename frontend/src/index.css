@@ -40,4 +40,40 @@
   .btn-primary {
     @apply bg-gold text-background font-semibold py-2 px-4 rounded-lg hover:bg-gold-hover transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
   }
+
+  /* Wide tables scroll horizontally. The default scrollbar is nearly
+     invisible on a dark background, so hidden columns look like missing
+     data rather than like something you can scroll to. */
+  .table-scroll {
+    @apply overflow-x-auto;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  .table-scroll::-webkit-scrollbar {
+    height: 10px;
+  }
+  .table-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .table-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 5px;
+  }
+  .table-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: #3d3d3d;
+  }
+
+  /* Frozen first column, so the employee's name stays visible while the
+     salary and provision columns scroll. The backgrounds are opaque on
+     purpose — a translucent cell would let the scrolling columns show
+     through. They match glass-card composited over the page background. */
+  .col-frozen {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    background-color: #151515;
+    box-shadow: 1px 0 0 var(--color-border);
+  }
+  .col-frozen-head {
+    background-color: #202020;
+  }
 }
